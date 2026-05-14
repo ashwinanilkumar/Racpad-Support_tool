@@ -1,0 +1,6 @@
+python-dotenv
+flask
+pandas
+keyring
+psycopg2-binary
+

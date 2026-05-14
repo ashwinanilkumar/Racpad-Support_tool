@@ -1,0 +1,28 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+*.env
+
+# Streamlit (legacy — no longer used)
+.streamlit/
+
+# VS Code local settings
+.vscode/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Distribution / build
+*.egg-info/
+dist/
+build/
