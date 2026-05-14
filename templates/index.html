@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Racpad Support Tool</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f6f9;--bg-card:#fff;--bg-sidebar:#1a1a2e;--bg-input:#fff;
+  --text:#1e293b;--text-sec:#64748b;--accent:#6366f1;--accent-hover:#4f46e5;
+  --accent-light:#eef2ff;--border:#e2e8f0;--shadow:0 4px 12px rgba(0,0,0,.06);
+  --radius:12px;--sidebar-w:240px;
+  --success:#10b981;--error:#ef4444;--info:#3b82f6;
+  --font-xs:11px;--font-sm:13px;--font-base:14px;--font-md:15px;--font-lg:20px;--font-xl:24px;
+}
+[data-theme="dark"]{--bg:#0f1119;--bg-card:#1a1d2e;--bg-input:#232738;--text:#e2e8f0;--text-sec:#94a3b8;--accent:#818cf8;--accent-hover:#6366f1;--accent-light:#1e1b4b;--border:#2d3148;--shadow:0 4px 12px rgba(0,0,0,.3)}
+html{font-size:16px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:var(--font-base);background:var(--bg);color:var(--text);display:flex;min-height:100vh;transition:background .3s,color .3s}
+/* ── Sidebar ── */
+.sidebar{width:var(--sidebar-w);background:var(--bg-sidebar);color:#e2e8f0;display:flex;flex-direction:column;padding:20px 14px;position:fixed;top:0;left:0;bottom:0;z-index:100;overflow-y:auto}
+.sidebar .logo{font-size:16px;font-weight:700;margin-bottom:28px;padding:4px 8px;display:flex;align-items:center;gap:10px;white-space:nowrap}
+.nav-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.4);padding:10px 12px 4px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:var(--font-sm);color:rgba(255,255,255,.75);transition:all .15s;margin-bottom:2px;white-space:nowrap}
+.nav-item:hover{background:rgba(255,255,255,.09);color:#fff}
+.nav-item.active{background:rgba(99,102,241,.35);color:#fff;font-weight:600}
+.nav-item .icon{width:20px;text-align:center;font-size:15px;flex-shrink:0}
+.sidebar-footer{margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}
+.theme-toggle{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:var(--font-sm);color:rgba(255,255,255,.65)}
+.theme-toggle:hover{background:rgba(255,255,255,.09);color:#fff}
+/* ── Main ── */
+.main{margin-left:var(--sidebar-w);flex:1;padding:32px 40px;min-width:0;max-width:calc(100vw - var(--sidebar-w))}
+.page{display:none}.page.active{display:block}
+.page-title{font-size:var(--font-xl);font-weight:700;margin-bottom:6px}
+.page-desc{color:var(--text-sec);font-size:var(--font-sm);margin-bottom:24px}
+/* ── Cards ── */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px;box-shadow:var(--shadow)}
+.card-title{font-size:var(--font-md);font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+/* ── Forms ── */
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:11px;font-weight:700;color:var(--text-sec);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:10px 13px;border:1px solid var(--border);border-radius:8px;font-size:var(--font-base);background:var(--bg-input);color:var(--text);transition:border .2s;font-family:inherit}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 22px;border:none;border-radius:8px;font-size:var(--font-sm);font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px)}
+.btn-secondary{background:var(--bg);border:1px solid var(--border);color:var(--text)}.btn-secondary:hover{border-color:var(--accent)}
+.btn-danger{background:var(--error);color:#fff}.btn-danger:hover{opacity:.9}
+.btn-sm{padding:8px 16px;font-size:13px}
+/* ── Alerts ── */
+.alert{padding:12px 16px;border-radius:8px;font-size:var(--font-sm);margin-bottom:12px}
+.alert-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.alert-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.alert-info{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+[data-theme="dark"] .alert-success{background:#064e3b;color:#6ee7b7;border-color:#065f46}
+[data-theme="dark"] .alert-error{background:#450a0a;color:#fca5a5;border-color:#991b1b}
+[data-theme="dark"] .alert-info{background:#1e3a5f;color:#93c5fd;border-color:#1e40af}
+/* ── Tables ── */
+.table-wrap{overflow-x:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:var(--font-sm)}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--border)}
+th{font-weight:700;color:var(--text-sec);font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+tr:hover td{background:var(--accent-light)}
+.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.pill-ok{background:#ecfdf5;color:#059669}.pill-err{background:#fef2f2;color:#dc2626}
+[data-theme="dark"] .pill-ok{background:#064e3b;color:#6ee7b7}[data-theme="dark"] .pill-err{background:#450a0a;color:#fca5a5}
+/* ── Misc ── */
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--bg-card);border:1px solid var(--border);padding:14px 20px;border-radius:10px;font-size:var(--font-sm);box-shadow:0 8px 24px rgba(0,0,0,.12);transform:translateY(100px);opacity:0;transition:all .3s;z-index:9999;max-width:320px}
+.toast.show{transform:translateY(0);opacity:1}.toast-error{border-color:var(--error);color:var(--error)}.toast-success{border-color:var(--success);color:var(--success)}
+.check-item{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:var(--font-sm)}
+.diag-section{margin-top:16px;padding:16px;background:var(--bg);border-radius:8px;border:1px solid var(--border)}
+.diag-section h4{font-size:var(--font-sm);font-weight:700;margin-bottom:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:.4px}
+/* ── Responsive ── */
+.mobile-btn{display:none;position:fixed;top:12px;left:12px;z-index:200;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;width:40px;height:40px;align-items:center;justify-content:center;font-size:18px;cursor:pointer}
+@media(max-width:900px){
+  :root{--sidebar-w:200px}
+  .main{padding:24px 24px}
+}
+@media(max-width:700px){
+  .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:20px 16px;max-width:100vw}
+  .mobile-btn{display:flex!important}
+  .form-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<button class="mobile-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+<aside class="sidebar" id="sidebar">
+  <div class="logo"><span>&#128736;</span> Racpad Tool</div>
+  <nav>
+    <div class="nav-label">Tools</div>
+    <div class="nav-item active" data-page="pricing" onclick="Nav.go('pricing')"><span class="icon">&#128176;</span>Pricing Alert</div>
+  <div class="nav-item" data-page="po622" onclick="Nav.go('po622')"><span class="icon">&#128269;</span>P0622 - Receive PO Error</div>
+    <div class="nav-item" data-page="appconfig" onclick="Nav.go('appconfig')"><span class="icon">&#9881;</span>App Config Triage</div>
+    <div class="nav-label" style="margin-top:20px">Administration</div>
+    <div class="nav-item" data-page="network" onclick="Nav.go('network')"><span class="icon">&#127760;</span>Network Check</div>
+    <div class="nav-item" data-page="setup" onclick="Nav.go('setup')"><span class="icon">&#9881;</span>Setup</div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="theme-toggle" onclick="toggleTheme()"><span id="themeIcon">&#127769;</span><span id="themeLabel">Dark Mode</span></div>
+  </div>
+</aside>
+<div class="main">
+  <div class="page active" id="page-pricing">
+    <h1 class="page-title">Pricing Alert</h1>
+    <p class="page-desc">Check PO pricing and send alerts for unpriced items.</p>
+    <div class="card"><div class="form-row"><div class="form-group"><label>PO Number</label><input id="poPo" value="16391903"/></div><div class="form-group"><label>Store Number</label><input id="poStore" value="02714"/></div></div><button class="btn btn-primary" onclick="Pricing.fetch()">&#128270; Fetch Pricing</button></div>
+    <div id="pricingResult"></div>
+    <div id="pricingEmailSection" style="display:none">
+<div class="card" style="margin-top:16px"><div class="card-title">&#128231; Send Notification Email</div><div class="form-row"><div class="form-group"><label>Recipient Email</label><input id="pricingEmailTo" placeholder="user@domain.com"/></div><div class="form-group"><label>Recipient Name</label><input id="pricingEmailName" value="Pricing" oninput="Pricing.refreshBody()"/></div></div><div class="form-group"><label>CC <span style="font-size:.7rem;color:var(--text-sec);font-weight:400">(comma-separated)</span></label><input id="pricingEmailCc" placeholder="cc1@domain.com, cc2@domain.com"/></div><div class="form-row"><div class="form-group"><label>Incident Number</label><input id="pricingIncidentNo" placeholder="e.g. INCTEC1624925" oninput="Pricing.refreshSubject()"/></div><div class="form-group"><label>Incident Short Description</label><input id="pricingIncidentDesc" placeholder="e.g. RACFI-RACPAD - Pricing | Pricing not found |" oninput="Pricing.refreshSubject()"/></div></div><div class="form-group"><label>Email Subject</label><input id="pricingEmailSubject" placeholder="(auto-generated from incident fields)"/></div><div class="form-group"><label>Model Number(s) <span style="font-size:.7rem;color:var(--text-sec);font-weight:400">(comma-separated — email updates live)</span></label><input id="pricingEmailModels" placeholder="MODEL1, MODEL2" oninput="Pricing.refreshBody()"/></div><div class="form-group"><label>Email Body</label><textarea id="pricingEmailBody" rows="12" style="font-family:monospace;font-size:.8rem"></textarea></div><button class="btn btn-primary" onclick="Pricing.sendEmail()">&#128232; Send Email</button><div id="pricingEmailAlert" style="margin-top:12px"></div></div></div>
+  </div>
+  <div class="page" id="page-po622">
+  <h1 class="page-title">PO622 - Unable to receive PO Diagnostic</h1>
+  <p class="page-desc">Diagnose "Unable to receive purchase order" (PO622) issues and send notification emails.</p>
+    <div class="card"><div class="form-row"><div class="form-group"><label>PO Number</label><input id="diagPo" value="16391903"/></div><div class="form-group"><label>Store Number</label><input id="diagStore" value="02714"/></div></div><button class="btn btn-primary" onclick="PO622.diagnose()">&#129658; Run Diagnostic</button></div>
+    <div id="diagResult"></div>
+    <div id="emailSection" style="display:none">
+<div class="card" style="margin-top:16px"><div class="card-title">&#128231; Send Notification Email</div><div class="form-row"><div class="form-group"><label>Recipient Email</label><input id="emailTo" placeholder="user@domain.com"/></div><div class="form-group"><label>Recipient Name</label><input id="emailName" value="Kevin Buxton" oninput="PO622.refreshBody()"/></div></div><div class="form-group"><label>CC <span style="font-size:.7rem;color:var(--text-sec);font-weight:400">(comma-separated)</span></label><input id="emailCc" placeholder="cc1@domain.com, cc2@domain.com"/></div><div class="form-row"><div class="form-group"><label>Incident Number</label><input id="emailIncidentNo" placeholder="e.g. INCTEC1624925" oninput="PO622.refreshSubject()"/></div><div class="form-group"><label>Incident Short Description</label><input id="emailIncidentDesc" placeholder="e.g. RACFI-RACPAD - Inventory | Unable to receive PO |" oninput="PO622.refreshSubject()"/></div></div><div class="form-group"><label>Email Subject</label><input id="emailSubject" placeholder="(auto-generated from incident fields)"/></div><div class="form-group"><label></label>Model Number(s) <span style="font-size:.7rem;color:var(--text-sec);font-weight:400">(comma-separated — email updates live)</span></label><input id="emailModels" placeholder="MODEL1, MODEL2" oninput="PO622.refreshBody()"/></div><div class="form-group"><label>Email Body</label><textarea id="emailBody" rows="12" style="font-family:monospace;font-size:.8rem"></textarea></div><button class="btn btn-primary" onclick="PO622.sendEmail()">&#128232; Send Email</button><div id="emailAlert" style="margin-top:12px"></div></div></div>
+  </div>
+  <!-- ── App Config Triage ── -->
+  <div class="page" id="page-appconfig">
+    <h1 class="page-title">App Config Triage</h1>
+    <p class="page-desc">Look up configuration rules across the hierarchy (ConfigDB — configadm schema).</p>
+    <div class="card">
+      <div class="form-group"><label>Rule Name</label><input id="cfgRuleName" placeholder="e.g. SameAsCashDays"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Hierarchy (Scope Type)</label>
+          <select id="cfgScopeType" onchange="AppConfig.updatePlaceholder()">
+            <option value="STORE">Store</option>
+            <option value="DISTRICT">District</option>
+            <option value="REGION">Region</option>
+            <option value="STATE">State</option>
+            <option value="COMPANY">Company</option>
+            <option value="COUNTRY">Country</option>
+            <option value="LOB">LOB</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Scope Value</label><input id="cfgScopeValue" placeholder="Enter store number (e.g. 04108)"/></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="AppConfig.lookup()">&#128270; Look Up Config</button>
+        <button class="btn btn-secondary btn-sm" onclick="AppConfig.exportCSV()" id="cfgExportBtn" style="display:none">&#128229; Export CSV</button>
+      </div>
+    </div>
+    <div id="cfgHierarchyChain" style="display:none;margin-bottom:16px"></div>
+    <div id="cfgResult"></div>
+    <div id="cfgDiffPanel" style="display:none"></div>
+  </div>
+  <div class="page" id="page-network">
+    <h1 class="page-title">Network Connectivity</h1>
+    <p class="page-desc">Test TCP connectivity to SMTP, RAC DB, Pricing DB, and Config DB.</p>
+    <div class="card">
+      <button class="btn btn-primary" onclick="Network.check()">&#128268; Run Connectivity Check</button>
+      <div id="netResult" style="margin-top:16px"></div>
+    </div>
+  </div>
+  <div class="page" id="page-setup">
+    <h1 class="page-title">Setup</h1>
+    <p class="page-desc">Configure email and database credentials.</p>
+    <div class="card"><div class="card-title">&#128231; Email (SMTP)</div><div class="form-row"><div class="form-group"><label>SMTP User</label><input id="smtpUser" placeholder="user@domain.com"/></div><div class="form-group"><label>SMTP Password</label><input id="smtpPass" type="password"/></div></div><div class="form-row"><div class="form-group"><label>SMTP Host</label><input id="smtpHost" value="smtp.office365.com"/></div><div class="form-group"><label>SMTP Port</label><input id="smtpPort" value="587"/></div></div><button class="btn btn-primary btn-sm" onclick="Setup.saveEmail()">Save Email Settings</button><div id="emailSetupAlert" style="margin-top:10px"></div></div>
+    <div class="card"><div class="card-title">&#128451; Database Credentials <span style="font-size:.75rem;font-weight:400;color:var(--text-sec);">(Kerberos)</span></div><h4 style="font-size:.78rem;color:var(--text-sec);margin-bottom:8px">RAC Database</h4><div class="form-row"><div class="form-group"><label>Host</label><input id="racHost"/></div><div class="form-group"><label>Port</label><input id="racPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="racDb" value="racdb"/></div><div class="form-group"><label>User</label><input id="racUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Pricing Database</h4><div class="form-row"><div class="form-group"><label>Host</label><input id="prcHost"/></div><div class="form-group"><label>Port</label><input id="prcPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="prcDb" value="prcdb"/></div><div class="form-group"><label>User</label><input id="prcUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Config Database <span style="font-weight:400;font-size:.72rem">(configadm schema)</span></h4><div class="form-row"><div class="form-group"><label>Host</label><input id="cfgHost"/></div><div class="form-group"><label>Port</label><input id="cfgPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="cfgDb" value="configdb"/></div><div class="form-group"><label>User</label><input id="cfgUser"/></div></div><button class="btn btn-primary btn-sm" onclick="Setup.saveDb()">Save DB Settings</button><div id="dbSetupAlert" style="margin-top:10px"></div></div>
+    <div class="card"><div class="card-title">&#128465; Clear All Credentials</div><p style="font-size:.82rem;color:var(--text-sec);margin-bottom:12px">Remove all saved credentials from keyring.</p><button class="btn btn-danger btn-sm" onclick="Setup.clearAll()">Clear Credentials</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function $(id){return document.getElementById(id)}
+function toast(msg,type){var t=$('toast');t.textContent=msg;t.className='toast show'+(type?' toast-'+type:'');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show')},4000)}
+async function api(method,url,body){try{var opts={method:method,headers:{'Content-Type':'application/json'}};if(body)opts.body=JSON.stringify(body);var r=await fetch(url,opts);var d=await r.json().catch(function(){return{error:'Server error'}});return{ok:r.ok,data:d}}catch(e){return{ok:false,data:{error:e.message}}}}
+var Nav={go:function(page){document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active')});var el=$('page-'+page);if(el)el.classList.add('active');var nav=document.querySelector('.nav-item[data-page="'+page+'"]');if(nav)nav.classList.add('active');$('sidebar').classList.remove('open');if(page==='appconfig'&&typeof AppConfig!=='undefined')AppConfig.updatePlaceholder()}};
+function toggleTheme(){var html=document.documentElement;var next=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',next);localStorage.setItem('theme',next);$('themeIcon').innerHTML=next==='dark'?'&#9728;&#65039;':'&#127769;';$('themeLabel').textContent=next==='dark'?'Light Mode':'Dark Mode'}
+(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);if(t==='dark'){$('themeIcon').innerHTML='&#9728;&#65039;';$('themeLabel').textContent='Light Mode'}})();
+async function init(){var r=await api('GET','/api/status');if(!r.ok){toast('Cannot reach server','error');Nav.go('setup');return}var d=r.data;if(!d.email_configured||!d.db_configured){Nav.go('setup');toast('Please complete setup first','info')}loadSavedCreds()}
+async function loadSavedCreds(){var r=await api('GET','/api/credentials/saved');if(!r.ok)return;var d=r.data;if(d.smtp_user)$('smtpUser').value=d.smtp_user;if(d.smtp_password)$('smtpPass').value=d.smtp_password;if(d.smtp_host)$('smtpHost').value=d.smtp_host;if(d.smtp_port)$('smtpPort').value=d.smtp_port;if(d.rac_host)$('racHost').value=d.rac_host;if(d.rac_port)$('racPort').value=d.rac_port;if(d.rac_dbname)$('racDb').value=d.rac_dbname;if(d.rac_user)$('racUser').value=d.rac_user;if(d.prc_host)$('prcHost').value=d.prc_host;if(d.prc_port)$('prcPort').value=d.prc_port;if(d.prc_dbname)$('prcDb').value=d.prc_dbname;if(d.prc_user)$('prcUser').value=d.prc_user;if(d.cfg_host)$('cfgHost').value=d.cfg_host;if(d.cfg_port)$('cfgPort').value=d.cfg_port;if(d.cfg_dbname)$('cfgDb').value=d.cfg_dbname;if(d.cfg_user)$('cfgUser').value=d.cfg_user}
+init();
+var Setup={saveEmail:async function(){var b={smtp_user:$('smtpUser').value,smtp_password:$('smtpPass').value,smtp_host:$('smtpHost').value,smtp_port:$('smtpPort').value};var r=await api('POST','/api/setup/email',b);$('emailSetupAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok){toast('Email saved!','success');init()}},saveDb:async function(){var b={rac_host:$('racHost').value,rac_port:$('racPort').value,rac_dbname:$('racDb').value,rac_user:$('racUser').value,rac_password:'',prc_host:$('prcHost').value,prc_port:$('prcPort').value,prc_dbname:$('prcDb').value,prc_user:$('prcUser').value,prc_password:'',cfg_host:$('cfgHost').value,cfg_port:$('cfgPort').value,cfg_dbname:$('cfgDb').value,cfg_user:$('cfgUser').value,cfg_password:''};var r=await api('POST','/api/setup/db',b);$('dbSetupAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok){toast('DB credentials saved!','success');init()}},clearAll:async function(){if(!confirm('Clear all saved credentials?'))return;var r=await api('DELETE','/api/credentials');if(r.ok){toast('Credentials cleared','success');loadSavedCreds()}else toast(r.data.error,'error')}};
+var Pricing={_result:null,fetch:async function(){var po=$('poPo').value.trim(),store=$('poStore').value.trim();if(!po||!store){toast('Enter PO and Store number','error');return}$('pricingResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Fetching...</div>';$('pricingEmailSection').style.display='none';var r=await api('POST','/api/pricing/fetch',{po_number:po,store_number:store});if(!r.ok){$('pricingResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}Pricing._result=r.data;var d=r.data;var html='<div class="card"><div class="card-title">Results for PO '+d.po_number+' / Store '+d.store_number+'</div>';var unpriced=d.items.filter(function(i){return!i.has_pricing});if(unpriced.length)html+='<div class="alert alert-error">'+unpriced.length+' item(s) missing pricing</div>';else html+='<div class="alert alert-success">All items have pricing</div>';html+='<div class="table-wrap"><table><thead><tr><th>Item</th><th>Model</th><th>Priced</th><th>Weekly</th><th>Monthly</th><th>Cash Price</th></tr></thead><tbody>';d.items.forEach(function(i){var x=i.details||{};html+='<tr><td>'+i.item+'</td><td>'+(i.model_number||'--')+'</td><td>'+(i.has_pricing?'<span class="pill pill-ok">Yes</span>':'<span class="pill pill-err">No</span>')+'</td><td>'+(x.weekly_rate||'--')+'</td><td>'+(x.monthly_rate||'--')+'</td><td>'+(x.cash_price||'--')+'</td></tr>'});html+='</tbody></table></div>';html+='</div>';$('pricingResult').innerHTML=html;Pricing._po=po;Pricing._store=store;var models=d.items.map(function(i){return i.model_number;}).filter(Boolean).join(', ');if(models)$('pricingEmailModels').value=models;Pricing._buildBody();Pricing.refreshSubject();$('pricingEmailSection').style.display='block'},sendAlert:async function(){if(!Pricing._result){toast('No result','error');return}var r=await api('POST','/api/pricing/send-alert',{result:Pricing._result});if(r.ok)toast(r.data.message,'success');else toast(r.data.error,'error')},refreshSubject:function(){var incNo=($('pricingIncidentNo').value||'').trim();var incDesc=($('pricingIncidentDesc').value||'').trim();var subj='';if(incNo){subj='Regarding '+incNo+(incDesc?' - '+incDesc:'');}else{subj='Pricing Alert — PO '+(Pricing._po||$('poPo').value)+' | Store '+(Pricing._store||$('poStore').value);}$('pricingEmailSubject').value=subj;},refreshBody:function(){Pricing._buildBody();},_buildBody:function(){var po=Pricing._po||$('poPo').value;var store=Pricing._store||$('poStore').value;var recipientName=($('pricingEmailName').value||'Pricing').trim();var allItems=Pricing._result?Pricing._result.items:[];var unpricedItems=allItems.filter(function(i){return!i.has_pricing;});var itemsToUse=unpricedItems.length>0?unpricedItems:allItems;var body='Hi @'+recipientName+',\n\n';if(itemsToUse.length>0){itemsToUse.forEach(function(item){var rmsId=item.item||'';var model=item.model_number||'N/A';body+='Regarding PO: '+po+', the CW is currently unable to receive the RMS item '+rmsId+' and is encountering the following error message:\n\n';body+='    Unable to receive purchase order. Please try again later.\n';body+='    Outbound Message: Pricing details not found for the rms item id '+rmsId+'\n\n';body+='PO           : '+po+'\n';body+='RMSItemNumber: '+rmsId+'\n';body+='Model        : '+model+'\n';body+='Store        : '+store+'\n\n';});}else{var rawModels=$('pricingEmailModels').value.trim();var models=rawModels?rawModels.split(',').map(function(m){return m.trim();}).filter(Boolean):[];models.forEach(function(m){body+='Regarding PO: '+po+', the CW is currently unable to receive the following item and is encountering a pricing error:\n\n';body+='PO           : '+po+'\n';body+='Model        : '+m+'\n';body+='Store        : '+store+'\n\n';});}body+='Regards,\nRacpad Support Team';$('pricingEmailBody').value=body;},sendEmail:async function(){var b={po_number:$('poPo').value,store_number:$('poStore').value,recipient_email:$('pricingEmailTo').value,recipient_name:$('pricingEmailName').value,model_lines:$('pricingEmailModels').value,email_body:$('pricingEmailBody').value,cc:$('pricingEmailCc').value,incident_number:$('pricingIncidentNo').value,incident_description:$('pricingIncidentDesc').value};var r=await api('POST','/api/pricing/send-email',b);$('pricingEmailAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok)toast(r.data.message,'success')}};
+var PO622={diagnose:async function(){var po=$('diagPo').value.trim(),store=$('diagStore').value.trim();if(!po||!store){toast('Enter PO and Store number','error');return}$('diagResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Diagnosing...</div>';$('emailSection').style.display='none';var r=await api('POST','/api/po622/diagnose',{po_number:po,store_number:store});if(!r.ok){$('diagResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}var d=r.data;var html='<div class="card"><div class="card-title">Diagnostic Results - PO '+d.po_number+' / Store '+d.store_number+'</div>';
+if(d.overview&&d.overview.length){var ov=d.overview[0];html+='<div class="diag-section"><h4>PO Overview</h4><div class="table-wrap"><table><tbody><tr><td><strong>Status</strong></td><td><span class="pill '+(ov.po_status==='RCV'?'pill-ok':'pill-err')+'">'+ov.po_status+' - '+(ov.po_status_description||'')+'</span></td></tr><tr><td><strong>Type</strong></td><td>'+ov.po_type+' - '+(ov.po_type_description||'')+'</td></tr><tr><td><strong>Order Date</strong></td><td>'+(ov.order_date||'--')+'</td></tr><tr><td><strong>Est. Delivery</strong></td><td>'+(ov.estimated_delivery_date||'--')+'</td></tr><tr><td><strong>Close Date</strong></td><td>'+(ov.close_date||'--')+'</td></tr><tr><td><strong>Created By</strong></td><td>'+(ov.created_by||'--')+'</td></tr></tbody></table></div></div>'}
+if(d.line_items&&d.line_items.length){html+='<div class="diag-section"><h4>Line Items</h4><div class="table-wrap"><table><thead><tr><th>Line</th><th>RMS Item</th><th>Model</th><th>Description</th><th>Ordered</th><th>Received</th><th>Partial</th><th>Reversed</th><th>Remaining</th></tr></thead><tbody>';d.line_items.forEach(function(li){html+='<tr><td>'+li.purchase_order_line_number+'</td><td>'+li.rms_item_number+'</td><td>'+(li.model_number||'--')+'</td><td>'+(li.item_description||'--')+'</td><td>'+li.quantity_ordered+'</td><td>'+li.fully_received_count+'</td><td>'+li.partial_received_count+'</td><td>'+li.reversed_count+'</td><td>'+li.remaining_to_receive+'</td></tr>'});html+='</tbody></table></div></div>'}
+if(d.duplicate_serials&&d.duplicate_serials.length){html+='<div class="diag-section"><h4>Duplicate Serials</h4><div class="table-wrap"><table><thead><tr><th>Serial</th><th>Item</th><th>Model</th><th>Times Used</th></tr></thead><tbody>';d.duplicate_serials.forEach(function(ds){html+='<tr><td>'+ds.serial_number+'</td><td>'+ds.rms_item_number+'</td><td>'+(ds.model_number||'--')+'</td><td>'+ds.times_used+'</td></tr>'});html+='</tbody></table></div></div>'}
+if(d.timeline&&d.timeline.length){html+='<div class="diag-section"><h4>Event Timeline</h4><div class="table-wrap"><table><thead><tr><th>Time</th><th>Event</th><th>Item</th><th>Details</th><th>By</th></tr></thead><tbody>';d.timeline.forEach(function(ev){html+='<tr><td style="white-space:nowrap">'+(ev.event_time?ev.event_time.substring(0,16).replace('T',' '):'--')+'</td><td><span class="pill pill-ok">'+ev.event_type+'</span></td><td>'+(ev.rms_item_number||'--')+'</td><td>'+(ev.details||'--')+'</td><td>'+(ev.performed_by||'--')+'</td></tr>'});html+='</tbody></table></div></div>'}
+html+='</div>';$('diagResult').innerHTML=html;$('emailSection').style.display='block';PO622._generateBody(po,store,d);var models=d.line_items?d.line_items.map(function(li){return li.model_number}).filter(Boolean).join(', '):'';if(models)$('emailModels').value=models},_generateBody:function(po,store,d){
+  PO622._po=po; PO622._store=store;
+  var models=d.line_items?d.line_items.map(function(li){return li.model_number||'';}).filter(Boolean):[];
+  if(models.length)$('emailModels').value=models.join(', ');
+  PO622._buildBody();
+  PO622.refreshSubject();
+},refreshSubject:function(){
+  var incNo=($('emailIncidentNo').value||'').trim();
+  var incDesc=($('emailIncidentDesc').value||'').trim();
+  var subj='';
+  if(incNo){subj='Regarding '+incNo+(incDesc?' - '+incDesc:'');}
+  else{subj='Unable to Receive PO '+(PO622._po||$('diagPo').value)+' — Store '+(PO622._store||$('diagStore').value);}
+  $('emailSubject').value=subj;
+},refreshBody:function(){
+  PO622._buildBody();
+},_buildBody:function(){
+  var po=PO622._po||$('diagPo').value;
+  var store=PO622._store||$('diagStore').value;
+  var recipientName=($('emailName').value||'Kevin Buxton').trim();
+  var rawModels=$('emailModels').value.trim();
+  var models=rawModels?rawModels.split(',').map(function(m){return m.trim();}).filter(Boolean):[];
+  var body='Hi @'+recipientName+',\n\n';
+  body+='The store '+store+' is trying to receive PO '+po+' but they are getting below error\n';
+  body+='"Received count exceeds quantity order"\n\n';
+  if(models.length===1){
+    body+='Model '+models[0]+' under PO is still pending. Now the store would like to receive this item.\n\n';
+  } else if(models.length>1){
+    body+='The following models under PO are still pending. Now the store would like to receive these items.\n';
+    models.forEach(function(m,i){body+='  '+(i+1)+'. '+m+'\n';});
+    body+='\n';
+  }
+  body+='Could you please advise on the appropriate next steps.\n\n';
+  body+='Regards,\nRacpad Support Team';
+  $('emailBody').value=body;
+},sendEmail:async function(){var b={po_number:$('diagPo').value,store_number:$('diagStore').value,recipient_email:$('emailTo').value,recipient_name:$('emailName').value,model_lines:$('emailModels').value,email_body:$('emailBody').value,cc:$('emailCc').value,incident_number:$('emailIncidentNo').value,incident_description:$('emailIncidentDesc').value};var r=await api('POST','/api/po622/send-email',b);$('emailAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok)toast(r.data.message,'success')}};
+var Network={check:async function(){$('netResult').innerHTML='<div style="padding:12px 0;color:var(--text-sec);font-size:13px"><span class="spinner"></span> Checking connectivity…</div>';var r=await api('POST','/api/diagnostics/connectivity');if(!r.ok){$('netResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}var html='<div style="display:flex;flex-direction:column;gap:8px">';r.data.checks.forEach(function(c){var ok=c.ok;html+='<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;background:var(--bg);border:1px solid '+(ok?'#a7f3d0':'#fecaca')+'">';html+='<span style="font-size:18px">'+(ok?'✅':'❌')+'</span>';html+='<div style="flex:1"><div style="font-size:13px;font-weight:600;color:var(--text)">'+c.label+'</div>';if(c.message)html+='<div style="font-size:11px;color:var(--text-sec);margin-top:2px">'+c.message+'</div>';html+='</div>';html+='<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;'+(ok?'background:#ecfdf5;color:#059669':'background:#fef2f2;color:#dc2626')+'">'+(ok?'REACHABLE':'UNREACHABLE')+'</span>';html+='</div>';});html+='</div>';$('netResult').innerHTML=html}};
+var DBBrowser={databases:async function(){$('dbResult').innerHTML='<span class="spinner"></span>';var r=await api('POST','/api/db/databases',{db_target:$('dbTarget').value});if(!r.ok){$('dbResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}var html='<p style="font-size:.8rem;color:var(--text-sec);margin-bottom:8px">Connected to: <strong>'+r.data.connected_to+'</strong></p><div class="table-wrap"><table><thead><tr><th>Database</th></tr></thead><tbody>';r.data.databases.forEach(function(d){html+='<tr><td>'+d+'</td></tr>'});html+='</tbody></table></div>';$('dbResult').innerHTML=html},schemas:async function(){$('dbResult').innerHTML='<span class="spinner"></span>';var r=await api('POST','/api/db/schemas',{db_target:$('dbTarget').value});if(!r.ok){$('dbResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}var html='<p style="font-size:.8rem;color:var(--text-sec);margin-bottom:8px">DB: <strong>'+r.data.connected_to+'</strong> | Schemas: '+r.data.schemas.join(', ')+'</p><div class="table-wrap"><table><thead><tr><th>Schema</th><th>Table</th></tr></thead><tbody>';r.data.tables.forEach(function(row){html+='<tr><td>'+row.schema+'</td><td>'+row.table+'</td></tr>'});html+='</tbody></table></div>';$('dbResult').innerHTML=html}};
+var AppConfig={
+  _rows:null,
+  _PLACEHOLDERS:{'STORE':'Enter store number (e.g. 04108)','DISTRICT':'Enter district code (e.g. M0330)','REGION':'Enter region code','STATE':'Enter state code (e.g. US-TX or CA-ON)','COMPANY':'Enter company code (e.g. 819 or 01)','COUNTRY':'Enter country code (e.g. US, CA or MX)','LOB':'Enter LOB code (e.g. RTO or RAC)'},
+  _CHAIN:['STORE','DISTRICT','REGION','STATE','COMPANY','COUNTRY','LOB'],
+  updatePlaceholder:function(){var st=$('cfgScopeType').value;var ph=AppConfig._PLACEHOLDERS[st]||'Enter scope value';$('cfgScopeValue').placeholder=ph;$('cfgScopeValue').value=''},
+  diagnose:async function(){
+    $('cfgResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Diagnosing ConfigDB connection...</div>';
+    $('cfgHierarchyChain').style.display='none';$('cfgDiffPanel').style.display='none';$('cfgExportBtn').style.display='none';
+    var r=await api('POST','/api/appconfig/diagnose');
+    if(!r.ok){$('cfgResult').innerHTML='<div class="alert alert-error">'+(r.data.error||'Diagnose failed')+'</div>';return}
+    var d=r.data;
+    var html='<div class="card"><div class="card-title">&#128268; ConfigDB Diagnostic</div>';
+    if(d.connection){html+='<div class="diag-section"><h4>Connection</h4><table><tbody><tr><td><strong>Database</strong></td><td>'+d.connection.db+'</td></tr><tr><td><strong>User</strong></td><td>'+d.connection.usr+'</td></tr><tr><td><strong>Version</strong></td><td>'+d.connection.ver+'</td></tr></tbody></table></div>';}
+    html+='<div class="diag-section"><h4>All Schemas ('+d.all_schemas.length+')</h4><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">';
+    d.all_schemas.forEach(function(s){html+='<span style="padding:3px 10px;border-radius:20px;font-size:12px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent)">'+s+'</span>'});
+    html+='</div></div>';
+    if(d.config_tables&&d.config_tables.length){
+      html+='<div class="diag-section"><h4>Tables in *config* schemas ('+d.config_tables.length+')</h4><div class="table-wrap"><table><thead><tr><th>Schema</th><th>Table</th></tr></thead><tbody>';
+      d.config_tables.forEach(function(t){html+='<tr><td>'+t.schema_name+'</td><td>'+t.table_name+'</td></tr>'});
+      html+='</tbody></table></div></div>';
+    } else {
+      html+='<div class="alert alert-error" style="margin-top:10px">No schemas containing "config" found. The ConfigDB credentials may be pointing to the wrong database.</div>';
+    }
+    html+='</div>';
+    $('cfgResult').innerHTML=html;
+  },
+  lookup:async function(){
+    var rule=$('cfgRuleName').value.trim(),st=$('cfgScopeType').value,sv=$('cfgScopeValue').value.trim();
+    if(!rule){toast('Enter a rule name','error');return}
+    if(!sv){toast('Enter a scope value','error');return}
+    $('cfgResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Looking up config...</div>';
+    $('cfgHierarchyChain').style.display='none';$('cfgDiffPanel').style.display='none';$('cfgExportBtn').style.display='none';
+    AppConfig._rows=null;
+    var r=await api('POST','/api/appconfig/lookup',{rule_name:rule,scope_type:st,scope_value:sv});
+    if(!r.ok){$('cfgResult').innerHTML='<div class="alert alert-error">'+(r.data.error||'Request failed')+'</div>';return}
+    var d=r.data;
+    if(d.message&&(!d.rows||!d.rows.length)){$('cfgResult').innerHTML='<div class="alert alert-info">'+d.message+'</div>';return}
+    AppConfig._rows=d.rows;
+    $('cfgExportBtn').style.display='inline-flex';
+    // Hierarchy chain breadcrumb (for STORE scope)
+    if(st==='STORE'){
+      var levelsFound={};d.rows.forEach(function(row){levelsFound[row.hierarchy_level]=true});
+      var chainHtml='<div class="card" style="padding:14px 18px"><strong style="font-size:11px;text-transform:uppercase;color:var(--text-sec)">Hierarchy Chain</strong><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">';
+      AppConfig._CHAIN.forEach(function(lvl,i){
+        var has=levelsFound[lvl];
+        var eff=d.rows.length&&d.rows[0].hierarchy_level===lvl;
+        var cls=eff?'background:var(--success);color:#fff':(has?'background:var(--accent-light);color:var(--accent);border:1px solid var(--accent)':'background:var(--bg);color:var(--text-sec);border:1px solid var(--border)');
+        chainHtml+='<span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;'+cls+'">'+lvl+(eff?' ★':'')+'</span>';
+        if(i<AppConfig._CHAIN.length-1)chainHtml+='<span style="color:var(--text-sec);font-size:14px;line-height:28px">→</span>';
+      });
+      chainHtml+='</div></div>';
+      $('cfgHierarchyChain').innerHTML=chainHtml;$('cfgHierarchyChain').style.display='block';
+    }
+    // Results table
+    var html='<div class="card"><div class="card-title">Config Results — '+d.rule_name+' @ '+d.scope_type+' = '+d.scope_value+'</div>';
+    html+='<div class="table-wrap"><table><thead><tr><th>Level</th><th title="1=STORE · 2=DISTRICT · 3=REGION · 5=STATE · 6=COMPANY · 8=COUNTRY · 9=LOB — lower = more specific">Priority</th><th>Effective</th><th>Current Value</th><th>Previous Value</th><th>Category</th><th>Group</th><th>Assoc</th><th>Parent</th><th>Start</th><th>End</th><th>Modified By</th><th>Modified Date</th></tr></thead><tbody>';
+    d.rows.forEach(function(row){
+      var isEff=row.is_effective===true||row.is_effective==='true';
+      var trStyle=isEff?'background:rgba(16,185,129,.1);font-weight:600':'';
+      html+='<tr style="'+trStyle+'">';
+      html+='<td>'+row.hierarchy_level+'</td>';
+      html+='<td>'+(row.priority!=null?row.priority:'—')+'</td>';
+      html+='<td>'+(isEff?'<span class="pill pill-ok">★ YES</span>':'—')+'</td>';
+      html+='<td>'+AppConfig._esc(row.current_value)+'</td>';
+      html+='<td>'+(row.previous_value!=null?AppConfig._esc(row.previous_value):'<span style="color:var(--text-sec)">—</span>')+'</td>';
+      html+='<td>'+AppConfig._esc(row.param_category_name)+'</td>';
+      html+='<td>'+AppConfig._esc(row.param_group_name)+'</td>';
+      html+='<td>'+AppConfig._esc(row.association_ref_code)+'</td>';
+      html+='<td>'+(row.parent_association_ref_code||'—')+'</td>';
+      html+='<td>'+(row.start_date?row.start_date.substring(0,10):'—')+'</td>';
+      html+='<td>'+(row.end_date?row.end_date.substring(0,10):'—')+'</td>';
+      html+='<td>'+(row.last_modified_by||'—')+'</td>';
+      html+='<td>'+(row.last_modified_date?row.last_modified_date.substring(0,16).replace('T',' '):'—')+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div></div>';
+    $('cfgResult').innerHTML=html;
+    // Auto-load history for the effective row (fallback to first row)
+    var effRow=d.rows.find(function(r){return r.is_effective===true||r.is_effective==='true'});
+    if(!effRow)effRow=d.rows[0];
+    if(effRow&&effRow.param_config_list_of_value_id!=null){
+      AppConfig.showHistory(effRow.param_config_list_of_value_id, effRow.hierarchy_level);
+    } else {
+      $('cfgDiffPanel').style.display='none';
+    }
+  },
+  showHistory:function(plovId,levelLabel){
+    var panel=$('cfgDiffPanel');
+    panel.innerHTML='<div class="card" style="margin-top:8px"><div class="card-title">&#128337; Audit History — '+AppConfig._esc(levelLabel)+'</div><div id="cfgHistoryBody" style="color:var(--text-sec);font-size:13px">Loading…</div></div>';
+    panel.style.display='block';
+    fetch('/api/appconfig/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({param_config_list_of_value_id:plovId})})
+      .then(function(r){return r.json()})
+      .then(function(d){
+        var body=$('cfgHistoryBody');
+        if(d.error){body.innerHTML='<span style="color:var(--error)">'+AppConfig._esc(d.error)+'</span>';return}
+        var hist=d.history||[];
+        if(!hist.length){body.innerHTML='No audit records found.';return}
+        var tl='<div style="position:relative;padding-left:28px">';
+        tl+='<div style="position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--border)"></div>';
+        hist.forEach(function(h,i){
+          var isLatest=i===0;
+          var dotColor=isLatest?'var(--success)':'var(--accent)';
+          var bg=isLatest?'background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.3)':'background:var(--card-bg);border:1px solid var(--border)';
+          var dateStr=h.last_modified_date?h.last_modified_date.substring(0,16).replace('T',' '):(h.created_date?h.created_date.substring(0,16).replace('T',' '):'Unknown date');
+          var byStr=h.last_modified_by||h.created_by||'Unknown';
+          tl+='<div style="position:relative;margin-bottom:12px">';
+          tl+='<div style="position:absolute;left:-24px;top:10px;width:12px;height:12px;border-radius:50%;background:'+dotColor+';border:2px solid #fff;box-shadow:0 0 0 2px '+dotColor+'"></div>';
+          tl+='<div style="padding:10px 14px;border-radius:8px;'+bg+'">';
+          tl+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+          tl+='<span style="font-size:11px;font-weight:700;color:'+(isLatest?'var(--success)':'var(--accent)')+'">'+( isLatest?'● CURRENT':'○ PREVIOUS')+'</span>';
+          tl+='<span style="font-size:11px;color:var(--text-sec)">'+AppConfig._esc(dateStr)+' &nbsp;·&nbsp; '+AppConfig._esc(byStr)+'</span>';
+          tl+='</div>';
+          tl+='<code style="display:block;white-space:pre-wrap;word-break:break-all;font-size:13px">'+AppConfig._esc(h.param_value!=null?String(h.param_value):'(null)')+'</code>';
+          tl+='</div></div>';
+        });
+        tl+='</div>';
+        body.innerHTML=tl;
+      })
+      .catch(function(e){$('cfgHistoryBody').innerHTML='<span style="color:var(--error)">Request failed: '+AppConfig._esc(String(e))+'</span>'});
+  },
+  exportCSV:function(){
+    if(!AppConfig._rows||!AppConfig._rows.length){toast('No data to export','error');return}
+    var cols=['current_value','previous_value','param_key_name','param_group_name','param_category_name','hierarchy_level','priority','is_effective','association_ref_code','parent_association_ref_code','active','start_date','end_date','created_by','created_date','last_modified_by','last_modified_date','prev_modified_by','prev_modified_date'];
+    var lines=[cols.join(',')];
+    AppConfig._rows.forEach(function(row){
+      var vals=cols.map(function(c){var v=row[c];if(v==null)return'';v=String(v);if(v.indexOf(',')>=0||v.indexOf('"')>=0)v='"'+v.replace(/"/g,'""')+'"';return v});
+      lines.push(vals.join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='appconfig_export.csv';a.click();
+    toast('CSV exported','success');
+  },
+  _esc:function(s){if(s==null)return'—';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+};
+</script>
+</body>
+</html>
