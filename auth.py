@@ -13,6 +13,7 @@ from typing import Optional
 _EMAIL_SERVICE  = "racpad_email"
 _DB_SERVICE     = "racpad_db"
 _CONFIG_DB_SERVICE = "racpad_config_db"
+_PAYMENT_DB_SERVICE = "racpad_payment_db"
 _CRED_USERNAME  = "racpad_user"   # fixed username key used for all entries
 
 
@@ -123,6 +124,39 @@ def clear_config_db_credentials() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Payment DB credentials  (MySQL — schema: ESBPAYADM01)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def save_payment_db_credentials(
+    pay_host: str, pay_port: str, pay_dbname: str,
+    pay_user: str, pay_password: str,
+) -> None:
+    """Persist Payment DB (MySQL) connection details to the OS keyring."""
+    payload = json.dumps({
+        "pay_host": pay_host, "pay_port": pay_port,
+        "pay_dbname": pay_dbname, "pay_user": pay_user,
+        "pay_password": pay_password,
+    })
+    keyring.set_password(_PAYMENT_DB_SERVICE, _CRED_USERNAME, payload)
+
+
+def load_payment_db_credentials() -> Optional[dict]:
+    """Return Payment DB credential dict if saved, else None."""
+    raw = keyring.get_password(_PAYMENT_DB_SERVICE, _CRED_USERNAME)
+    if raw:
+        return json.loads(raw)
+    return None
+
+
+def clear_payment_db_credentials() -> None:
+    """Remove saved Payment DB credentials."""
+    try:
+        keyring.delete_password(_PAYMENT_DB_SERVICE, _CRED_USERNAME)
+    except keyring.errors.PasswordDeleteError:
+        pass
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Convenience helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -136,3 +170,4 @@ def clear_all_credentials() -> None:
     clear_email_credentials()
     clear_db_credentials()
     clear_config_db_credentials()
+    clear_payment_db_credentials()

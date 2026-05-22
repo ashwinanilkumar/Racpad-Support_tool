@@ -3,10 +3,14 @@ db.py — PostgreSQL connection factory.
 
 RAC DB  → schema: racadm
 Pricing DB → schema: prcadm
+Payment DB → MySQL (ESBPAYADM01)
 """
 
 import psycopg2
 import psycopg2.extras
+import mysql.connector
+import pymysql
+import pymysql.cursors
 from auth import load_db_credentials
 
 _RAC_SCHEMA = "racadm"
@@ -116,3 +120,95 @@ def get_config_connection():
             f"Check VPN, host/port, and credentials.\n"
             f"Original error: {e}"
         ) from e
+
+
+def get_payment_connection():
+    """
+    Return a mysql.connector connection to the Payment DB (MySQL).
+    Requires dedicated Payment DB credentials saved via Setup.
+    Raises RuntimeError with a helpful message on connectivity problems.
+    """
+    from auth import load_payment_db_credentials
+    pay_creds = load_payment_db_credentials()
+
+    if not pay_creds:
+        raise RuntimeError(
+            "Payment DB credentials not found. "
+            "Please go to Setup and configure the Payment Database connection."
+        )
+
+    password = pay_creds.get("pay_password", "")
+    # Detect corrupted password (masked bullets stored instead of real password)
+    if not password or any(ord(c) > 127 for c in password):
+        raise RuntimeError(
+            "Payment DB password is missing or corrupted. "
+            "Please go to Setup and re-enter your Payment Database password."
+        )
+
+    # Try PyMySQL first (handles auth like JDBC/DBeaver)
+    try:
+        conn = pymysql.connect(
+            host=pay_creds["pay_host"],
+            port=int(pay_creds.get("pay_port", "3306")),
+            user=pay_creds["pay_user"],
+            password=password,
+            database=pay_creds.get("pay_dbname") or None,
+            connect_timeout=10,
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+        return conn
+    except pymysql.Error as e:
+        pymysql_error = e
+
+    # Fallback: mysql-connector-python with multiple strategies
+    connect_args = {
+        "host": pay_creds["pay_host"],
+        "port": int(pay_creds.get("pay_port", "3306")),
+        "user": pay_creds["pay_user"],
+        "password": pay_creds.get("pay_password", ""),
+        "connect_timeout": 10,
+        "use_pure": True,
+    }
+    if pay_creds.get("pay_dbname"):
+        connect_args["database"] = pay_creds["pay_dbname"]
+
+    # Try multiple connection strategies
+    last_error = None
+    for extra in [
+        {"ssl_disabled": False},
+        {"auth_plugin": "mysql_native_password", "ssl_disabled": False},
+        {"auth_plugin": "mysql_native_password"},
+        {"auth_plugin": "caching_sha2_password"},
+        {},
+    ]:
+        try:
+            conn = mysql.connector.connect(**connect_args, **extra)
+            return conn
+        except mysql.connector.Error as e:
+            last_error = e
+            continue
+
+    raise RuntimeError(
+        f"❌ Cannot connect to Payment DB ({pay_creds['pay_host']}:{pay_creds.get('pay_port','3306')}).\n"
+        f"Check VPN, host/port, and credentials.\n"
+        f"Original error (PyMySQL): {pymysql_error}\n"
+        f"Original error (mysql-connector): {last_error}"
+    )
+
+
+def execute_mysql_query(conn, sql: str, params: dict) -> list[dict]:
+    """
+    Execute a SELECT query on a MySQL connection and return results as a list of dicts.
+    Works with both PyMySQL and mysql-connector-python connections.
+    Uses %(name)s style parameters.
+    """
+    if isinstance(conn, pymysql.connections.Connection):
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+    else:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql, params)
+        rows = [dict(row) for row in cursor.fetchall()]
+        cursor.close()
+        return rows
