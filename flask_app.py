@@ -12,7 +12,7 @@ import json
 import traceback
 
 import auth
-from db import get_connections, execute_query, get_config_connection
+from db import get_connections, execute_query, get_config_connection, get_payment_connection, execute_mysql_query
 from email_sender import (
     process_po_pricing_result,
     send_pricing_notification_email,
@@ -124,6 +124,7 @@ def index():
 def api_status():
     email_creds = auth.load_email_credentials()
     db_creds    = auth.load_db_credentials()
+    pay_creds   = auth.load_payment_db_credentials()
     return jsonify({
         "email_configured":   email_creds is not None,
         "db_configured":      db_creds    is not None,
@@ -133,6 +134,7 @@ def api_status():
         "prc_info":           (f"{db_creds['prc_user']}@{db_creds['prc_host']}"
                                f"/{db_creds['prc_dbname']}") if db_creds else None,
         "config_db_configured": auth.load_config_db_credentials() is not None,
+        "payment_db_configured": pay_creds is not None,
         "pricing_recipients": PRICING_TEAM_RECIPIENTS,
         "smtp_host":          SMTP_HOST,
         "smtp_port":          str(SMTP_PORT),
@@ -171,6 +173,14 @@ def api_get_saved_creds():
         result["cfg_dbname"] = cfg_creds.get("cfg_dbname", "configdb")
         result["cfg_user"] = cfg_creds.get("cfg_user", "")
         result["cfg_password"] = "••••••••" if cfg_creds.get("cfg_password") else ""
+
+    pay_creds = auth.load_payment_db_credentials()
+    if pay_creds:
+        result["pay_host"] = pay_creds.get("pay_host", "")
+        result["pay_port"] = pay_creds.get("pay_port", "3306")
+        result["pay_dbname"] = pay_creds.get("pay_dbname", "")
+        result["pay_user"] = pay_creds.get("pay_user", "")
+        result["pay_password"] = "••••••••" if pay_creds.get("pay_password") else ""
 
     return jsonify(result)
 
@@ -231,6 +241,22 @@ def api_setup_db():
             cfg_user,
             data.get("cfg_password", ""),
             use_kerberos=data.get("use_kerberos", True),
+        )
+
+    # Save Payment DB (MySQL) credentials if provided
+    pay_user = data.get("pay_user", "").strip()
+    if pay_user:
+        pay_password = data.get("pay_password", "")
+        # If masked or empty, keep existing password
+        if not pay_password or "••••" in pay_password:
+            existing = auth.load_payment_db_credentials()
+            pay_password = existing.get("pay_password", "") if existing else ""
+        auth.save_payment_db_credentials(
+            data.get("pay_host", ""),
+            data.get("pay_port", "3306"),
+            data.get("pay_dbname", ""),
+            pay_user,
+            pay_password,
         )
 
     return jsonify({"success": True, "message": "DB credentials saved!"})
@@ -488,6 +514,23 @@ def api_connectivity():
         checks.append({"label": "Config DB", "ok": False,
                        "message": "credentials not configured — go to Setup"})
 
+    # Payment DB connectivity
+    pay_creds = auth.load_payment_db_credentials()
+    if pay_creds:
+        pay_host = pay_creds.get("pay_host", "")
+        pay_port = pay_creds.get("pay_port", 3306)
+        label = f"Payment DB  {pay_host}:{pay_port}"
+        try:
+            s = socket.create_connection((pay_host, int(pay_port)), timeout=5)
+            s.close()
+            checks.append({"label": label, "ok": True})
+        except OSError:
+            checks.append({"label": label, "ok": False,
+                           "message": "blocked (check VPN)"})
+    else:
+        checks.append({"label": "Payment DB", "ok": False,
+                       "message": "credentials not configured — go to Setup"})
+
     return jsonify({"checks": checks})
 
 
@@ -726,6 +769,135 @@ def api_appconfig_history():
 
 
 # ── Entry ─────────────────────────────────────────────────────────────────────
+
+# ── Customer Payment ──────────────────────────────────────────────────────────
+
+@app.route("/api/payment/lookup", methods=["POST"])
+def api_payment_lookup():
+    """Look up payment transactions and declined transactions for a customer."""
+    data = request.json or {}
+    customer_id = (data.get("customer_id") or "").strip()
+    customer_name = (data.get("customer_name") or "").strip()
+    card_last4 = (data.get("card_last4") or "").strip()
+    transaction_date = (data.get("transaction_date") or "").strip()
+
+    if not customer_id and not customer_name:
+        return jsonify({"error": "Customer ID or Customer Name is required."}), 400
+
+    try:
+        conn = get_payment_connection()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+    try:
+        transactions = []
+        declined = []
+        search_method = ""
+
+        # Build common optional filters
+        extra_where = []
+        extra_params = {}
+        if card_last4:
+            extra_where.append("RIGHT(TRANSACTIONCOMMAND, 4) = %(card_last4)s")
+            extra_params["card_last4"] = card_last4
+        if transaction_date:
+            extra_where.append("DATE(TRANSACTIONDTS) = %(transaction_date)s")
+            extra_params["transaction_date"] = transaction_date
+
+        # Step 1: Try by Customer ID in PAYMENTTRANSACTION
+        if customer_id:
+            where_clauses = ["CUSTOMERID = %(customer_id)s"] + extra_where
+            params = {"customer_id": customer_id, **extra_params}
+
+            payment_sql = f"""
+                SELECT
+                  TRANSACTIONDTS, CUSTOMERID,
+                  ACCOUNTLOCATIONNUMBER AS Store,
+                  PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
+                  RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
+                  MERCHANTID, EXTERNALTRANSACTIONID,
+                  PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
+                FROM ESBPAYADM01.PAYMENTTRANSACTION
+                WHERE {' AND '.join(where_clauses)}
+                ORDER BY TRANSACTIONDTS DESC
+            """
+            transactions = execute_mysql_query(conn, payment_sql, params)
+            search_method = f"Customer ID: {customer_id}"
+
+        # Step 2: If no results by ID and customer name provided, search by name
+        #         First discover columns, then try PAYMENTCLIENTID LIKE name
+        if not transactions and customer_name:
+            where_clauses = ["PAYMENTCLIENTID LIKE %(customer_name)s"] + extra_where
+            params = {"customer_name": f"%{customer_name}%", **extra_params}
+
+            payment_sql = f"""
+                SELECT
+                  TRANSACTIONDTS, CUSTOMERID,
+                  ACCOUNTLOCATIONNUMBER AS Store,
+                  PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
+                  RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
+                  MERCHANTID, EXTERNALTRANSACTIONID,
+                  PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
+                FROM ESBPAYADM01.PAYMENTTRANSACTION
+                WHERE {' AND '.join(where_clauses)}
+                ORDER BY TRANSACTIONDTS DESC
+            """
+            try:
+                transactions = execute_mysql_query(conn, payment_sql, params)
+            except Exception:
+                transactions = []
+            search_method = f"Customer Name: {customer_name}"
+
+        # Step 3: If still no results, check Declined table
+        if not transactions:
+            declined_where = []
+            declined_params = {**extra_params}
+            if customer_id:
+                declined_where.append("CUSTOMERID = %(customer_id)s")
+                declined_params["customer_id"] = customer_id
+            elif customer_name:
+                declined_where.append("PAYMENTCLIENTID LIKE %(customer_name)s")
+                declined_params["customer_name"] = f"%{customer_name}%"
+
+            if declined_where:
+                all_where = declined_where + extra_where
+                declined_sql = f"""
+                    SELECT *
+                    FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
+                    WHERE {' AND '.join(all_where)}
+                """
+                declined = execute_mysql_query(conn, declined_sql, declined_params)
+                # Remove PROVIDE_PAYLOAD column from results
+                for row in declined:
+                    row.pop("PROVIDE_PAYLOAD", None)
+                if not search_method:
+                    search_method = "Declined table lookup"
+        else:
+            # Also fetch declined for reference if we have customer_id
+            if customer_id:
+                declined_sql = """
+                    SELECT *
+                    FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
+                    WHERE CUSTOMERID = %(customer_id)s
+                """
+                declined = execute_mysql_query(conn, declined_sql, {"customer_id": customer_id})
+                for row in declined:
+                    row.pop("PROVIDE_PAYLOAD", None)
+
+    except Exception as e:
+        return jsonify({"error": f"Query failed: {e}"}), 500
+    finally:
+        conn.close()
+
+    result = {
+        "customer_id": customer_id,
+        "customer_name": customer_name,
+        "search_method": search_method,
+        "transactions": transactions,
+        "declined": declined,
+    }
+    return jsonify(json.loads(json.dumps(result, default=_serialize)))
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8501, use_reloader=False)
