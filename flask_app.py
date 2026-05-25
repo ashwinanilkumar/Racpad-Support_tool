@@ -780,6 +780,8 @@ def api_payment_lookup():
     customer_name = (data.get("customer_name") or "").strip()
     card_last4 = (data.get("card_last4") or "").strip()
     transaction_date = (data.get("transaction_date") or "").strip()
+    # table_choice: "both" | "transactions" | "declined"
+    table_choice = (data.get("table_choice") or "both").strip()
 
     if not customer_id and not customer_name:
         return jsonify({"error": "Customer ID or Customer Name is required."}), 400
@@ -790,6 +792,11 @@ def api_payment_lookup():
         return jsonify({"error": str(e)}), 503
 
     try:
+        # Set a 60-second query execution timeout on the MySQL session
+        try:
+            execute_mysql_query(conn, "SET SESSION MAX_EXECUTION_TIME=60000", {})
+        except Exception:
+            pass  # Not all MySQL versions support this — ignore silently
         transactions = []
         declined = []
         search_method = ""
@@ -804,85 +811,110 @@ def api_payment_lookup():
             extra_where.append("DATE(TRANSACTIONDTS) = %(transaction_date)s")
             extra_params["transaction_date"] = transaction_date
 
-        # Step 1: Try by Customer ID in PAYMENTTRANSACTION
-        if customer_id:
-            where_clauses = ["CUSTOMERID = %(customer_id)s"] + extra_where
-            params = {"customer_id": customer_id, **extra_params}
+        DECLINED_COLS = """
+            TRANSACTIONDTS, STATUSMESSAGE, STATUSCODE,
+            ACCOUNTLOCATIONNUMBER AS Store, ACCOUNTNUMBER, AMOUNT,
+            AUTHORIZATIONNUMBER, CARDTYPE, CREATEDBY, CUSTOMERID, ENTRY_METHOD,
+            EXTERNALTRANSACTIONID, FIRSTNAME, GLOBALCUSTOMERID, LASTNAME,
+            MERCHANTID, PAYMENTCLIENTID, PAYMENTMETHODID, PAYMENTPLATFORM,
+            PAYMENTTYPE, PAYMENT_NETWORK, PINLESS_CONVERTED,
+            PINLESS_RESPONSE_CODE, RECORDID, TRANSACTIONCOMMAND, TRANSACTIONID
+        """
 
-            payment_sql = f"""
-                SELECT
-                  TRANSACTIONDTS, CUSTOMERID,
-                  ACCOUNTLOCATIONNUMBER AS Store,
-                  PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
-                  RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
-                  MERCHANTID, EXTERNALTRANSACTIONID,
-                  PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
-                FROM ESBPAYADM01.PAYMENTTRANSACTION
-                WHERE {' AND '.join(where_clauses)}
-                ORDER BY TRANSACTIONDTS DESC
-            """
-            transactions = execute_mysql_query(conn, payment_sql, params)
-            search_method = f"Customer ID: {customer_id}"
-
-        # Step 2: If no results by ID and customer name provided, search by name
-        #         First discover columns, then try PAYMENTCLIENTID LIKE name
-        if not transactions and customer_name:
-            where_clauses = ["PAYMENTCLIENTID LIKE %(customer_name)s"] + extra_where
-            params = {"customer_name": f"%{customer_name}%", **extra_params}
-
-            payment_sql = f"""
-                SELECT
-                  TRANSACTIONDTS, CUSTOMERID,
-                  ACCOUNTLOCATIONNUMBER AS Store,
-                  PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
-                  RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
-                  MERCHANTID, EXTERNALTRANSACTIONID,
-                  PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
-                FROM ESBPAYADM01.PAYMENTTRANSACTION
-                WHERE {' AND '.join(where_clauses)}
-                ORDER BY TRANSACTIONDTS DESC
-            """
-            try:
+        # ── Transactions only ────────────────────────────────────────────────
+        if table_choice in ("both", "transactions"):
+            if customer_id:
+                where_clauses = ["CUSTOMERID = %(customer_id)s"] + extra_where
+                params = {"customer_id": customer_id, **extra_params}
+                payment_sql = f"""
+                    SELECT
+                      TRANSACTIONDTS, CUSTOMERID,
+                      ACCOUNTLOCATIONNUMBER AS Store,
+                      PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
+                      RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
+                      MERCHANTID, EXTERNALTRANSACTIONID,
+                      PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
+                    FROM ESBPAYADM01.PAYMENTTRANSACTION
+                    WHERE {' AND '.join(where_clauses)}
+                    ORDER BY TRANSACTIONDTS DESC
+                """
                 transactions = execute_mysql_query(conn, payment_sql, params)
-            except Exception:
-                transactions = []
-            search_method = f"Customer Name: {customer_name}"
+                search_method = f"Customer ID: {customer_id} — Payment Transactions"
 
-        # Step 3: If still no results, check Declined table
-        if not transactions:
+            if not transactions and customer_name:
+                # Split name into first/last — supports "First Last" or just one word
+                name_parts = customer_name.strip().upper().split()
+                firstname = name_parts[0] if len(name_parts) >= 1 else ""
+                lastname  = name_parts[1] if len(name_parts) >= 2 else ""
+
+                name_where = []
+                name_params = {**extra_params}
+                if firstname and lastname:
+                    name_where = ["UPPER(FIRSTNAME) = %(firstname)s", "UPPER(LASTNAME) = %(lastname)s"]
+                    name_params.update({"firstname": firstname, "lastname": lastname})
+                elif firstname:
+                    name_where = ["UPPER(FIRSTNAME) = %(firstname)s"]
+                    name_params.update({"firstname": firstname})
+
+                where_clauses = name_where + extra_where
+                if where_clauses:
+                    payment_sql = f"""
+                        SELECT
+                          TRANSACTIONDTS, CUSTOMERID,
+                          ACCOUNTLOCATIONNUMBER AS Store,
+                          PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
+                          RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
+                          MERCHANTID, EXTERNALTRANSACTIONID,
+                          PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
+                        FROM ESBPAYADM01.PAYMENTTRANSACTION
+                        WHERE {' AND '.join(where_clauses)}
+                        ORDER BY TRANSACTIONDTS DESC
+                    """
+                    try:
+                        transactions = execute_mysql_query(conn, payment_sql, name_params)
+                    except Exception:
+                        transactions = []
+                search_method = f"Customer Name: {customer_name} — Payment Transactions"
+
+        # ── Declined only ────────────────────────────────────────────────────
+        if table_choice == "declined" or (table_choice == "both" and not transactions):
             declined_where = []
             declined_params = {**extra_params}
             if customer_id:
                 declined_where.append("CUSTOMERID = %(customer_id)s")
                 declined_params["customer_id"] = customer_id
             elif customer_name:
-                declined_where.append("PAYMENTCLIENTID LIKE %(customer_name)s")
-                declined_params["customer_name"] = f"%{customer_name}%"
+                dec_name_parts = customer_name.strip().upper().split()
+                dec_firstname = dec_name_parts[0] if len(dec_name_parts) >= 1 else ""
+                dec_lastname  = dec_name_parts[1] if len(dec_name_parts) >= 2 else ""
+                if dec_firstname and dec_lastname:
+                    declined_where += ["UPPER(FIRSTNAME) = %(dec_firstname)s", "UPPER(LASTNAME) = %(dec_lastname)s"]
+                    declined_params.update({"dec_firstname": dec_firstname, "dec_lastname": dec_lastname})
+                elif dec_firstname:
+                    declined_where.append("UPPER(FIRSTNAME) = %(dec_firstname)s")
+                    declined_params["dec_firstname"] = dec_firstname
 
             if declined_where:
                 all_where = declined_where + extra_where
                 declined_sql = f"""
-                    SELECT *
+                    SELECT {DECLINED_COLS}
                     FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
                     WHERE {' AND '.join(all_where)}
                 """
                 declined = execute_mysql_query(conn, declined_sql, declined_params)
-                # Remove PROVIDE_PAYLOAD column from results
-                for row in declined:
-                    row.pop("PROVIDE_PAYLOAD", None)
-                if not search_method:
-                    search_method = "Declined table lookup"
-        else:
-            # Also fetch declined for reference if we have customer_id
-            if customer_id:
-                declined_sql = """
-                    SELECT *
-                    FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
-                    WHERE CUSTOMERID = %(customer_id)s
-                """
-                declined = execute_mysql_query(conn, declined_sql, {"customer_id": customer_id})
-                for row in declined:
-                    row.pop("PROVIDE_PAYLOAD", None)
+                if table_choice == "declined":
+                    search_method = f"{'Customer ID: ' + customer_id if customer_id else 'Customer Name: ' + customer_name} — Declined Transactions"
+                elif not search_method:
+                    search_method = "Declined table lookup (no results in Payment Transactions)"
+
+        # ── Both: also fetch declined when transactions found ────────────────
+        elif table_choice == "both" and transactions and customer_id:
+            declined_sql = f"""
+                SELECT {DECLINED_COLS}
+                FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
+                WHERE CUSTOMERID = %(customer_id)s
+            """
+            declined = execute_mysql_query(conn, declined_sql, {"customer_id": customer_id})
 
     except Exception as e:
         return jsonify({"error": f"Query failed: {e}"}), 500
@@ -893,6 +925,7 @@ def api_payment_lookup():
         "customer_id": customer_id,
         "customer_name": customer_name,
         "search_method": search_method,
+        "table_choice": table_choice,
         "transactions": transactions,
         "declined": declined,
     }
