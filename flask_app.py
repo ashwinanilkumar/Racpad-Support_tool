@@ -792,9 +792,9 @@ def api_payment_lookup():
         return jsonify({"error": str(e)}), 503
 
     try:
-        # Set a 60-second query execution timeout on the MySQL session
+        # Set a 120-second query execution timeout on the MySQL session
         try:
-            execute_mysql_query(conn, "SET SESSION MAX_EXECUTION_TIME=60000", {})
+            execute_mysql_query(conn, "SET SESSION MAX_EXECUTION_TIME=120000", {})
         except Exception:
             pass  # Not all MySQL versions support this — ignore silently
         transactions = []
@@ -843,17 +843,17 @@ def api_payment_lookup():
 
             if not transactions and customer_name:
                 # Split name into first/last — supports "First Last" or just one word
-                name_parts = customer_name.strip().upper().split()
+                name_parts = customer_name.strip().split()
                 firstname = name_parts[0] if len(name_parts) >= 1 else ""
                 lastname  = name_parts[1] if len(name_parts) >= 2 else ""
 
                 name_where = []
                 name_params = {**extra_params}
                 if firstname and lastname:
-                    name_where = ["UPPER(FIRSTNAME) = %(firstname)s", "UPPER(LASTNAME) = %(lastname)s"]
+                    name_where = ["FIRSTNAME = %(firstname)s", "LASTNAME = %(lastname)s"]
                     name_params.update({"firstname": firstname, "lastname": lastname})
                 elif firstname:
-                    name_where = ["UPPER(FIRSTNAME) = %(firstname)s"]
+                    name_where = ["FIRSTNAME = %(firstname)s"]
                     name_params.update({"firstname": firstname})
 
                 where_clauses = name_where + extra_where
@@ -884,14 +884,14 @@ def api_payment_lookup():
                 declined_where.append("CUSTOMERID = %(customer_id)s")
                 declined_params["customer_id"] = customer_id
             elif customer_name:
-                dec_name_parts = customer_name.strip().upper().split()
+                dec_name_parts = customer_name.strip().split()
                 dec_firstname = dec_name_parts[0] if len(dec_name_parts) >= 1 else ""
                 dec_lastname  = dec_name_parts[1] if len(dec_name_parts) >= 2 else ""
                 if dec_firstname and dec_lastname:
-                    declined_where += ["UPPER(FIRSTNAME) = %(dec_firstname)s", "UPPER(LASTNAME) = %(dec_lastname)s"]
+                    declined_where += ["FIRSTNAME = %(dec_firstname)s", "LASTNAME = %(dec_lastname)s"]
                     declined_params.update({"dec_firstname": dec_firstname, "dec_lastname": dec_lastname})
                 elif dec_firstname:
-                    declined_where.append("UPPER(FIRSTNAME) = %(dec_firstname)s")
+                    declined_where.append("FIRSTNAME = %(dec_firstname)s")
                     declined_params["dec_firstname"] = dec_firstname
 
             if declined_where:
