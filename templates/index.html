@@ -154,15 +154,29 @@ tr:hover td{background:var(--accent-light)}
     <h1 class="page-title">Customer Payment</h1>
     <p class="page-desc">Validate customer payment transactions in the Payment DB (MySQL).</p>
     <div class="card">
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>Query Table</label>
+          <select id="payTableChoice" style="margin-top:4px">
+            <option value="both">Both Tables (auto-fallback)</option>
+            <option value="transactions">Payment Transactions only</option>
+            <option value="declined">Declined Transactions only</option>
+          </select>
+        </div>
+      </div>
       <div class="form-row">
         <div class="form-group"><label>Customer ID</label><input id="payCustomerId" placeholder="e.g. 111719049"/></div>
-        <div class="form-group"><label>Customer Name</label><input id="payCustomerName" placeholder="e.g. Lilian Foti"/></div>
+        <div class="form-group"><label>Customer Name <span style="font-size:11px;color:var(--text-sec)">(First Last)</span></label><input id="payCustomerName" placeholder="e.g. Lilian Foti"/></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Card Last 4 <span style="font-size:11px;color:var(--text-sec)">(optional)</span></label><input id="payCardLast4" placeholder="e.g. 0824" maxlength="4"/></div>
         <div class="form-group"><label>Transaction Date <span style="font-size:11px;color:var(--text-sec)">(optional)</span></label><input id="payTxnDate" type="date"/></div>
       </div>
-      <button class="btn btn-primary" onclick="Payment.lookup()">&#128270; Look Up Payment</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button id="payLookupBtn" class="btn btn-primary" onclick="Payment.lookup()">&#128270; Look Up Payment</button>
+        <button id="payCancelBtn" class="btn btn-danger" style="display:none" onclick="Payment.cancel()">&#10006; Cancel</button>
+        <span id="payTimer" style="font-size:12px;color:var(--text-sec);display:none"></span>
+      </div>
     </div>
     <div id="payResult" style="margin-top:16px"></div>
   </div>
@@ -372,58 +386,121 @@ var AppConfig={
   _esc:function(s){if(s==null)return'—';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 };
 var Payment={
+  _abortCtrl: null,
+  _timerInterval: null,
+  _startTime: null,
+  onTableChange:function(){},
+  _startLoading:function(){
+    $('payLookupBtn').disabled=true;
+    $('payLookupBtn').innerHTML='<span class="spinner"></span> Looking up...';
+    $('payCancelBtn').style.display='inline-flex';
+    $('payTimer').style.display='inline';
+    Payment._startTime=Date.now();
+    Payment._timerInterval=setInterval(function(){
+      var elapsed=((Date.now()-Payment._startTime)/1000).toFixed(1);
+      $('payTimer').textContent=elapsed+'s elapsed';
+    },100);
+    $('payResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Running query...</div>';
+  },
+  _stopLoading:function(){
+    $('payLookupBtn').disabled=false;
+    $('payLookupBtn').innerHTML='&#128270; Look Up Payment';
+    $('payCancelBtn').style.display='none';
+    $('payTimer').style.display='none';
+    clearInterval(Payment._timerInterval);
+    Payment._timerInterval=null;
+    Payment._abortCtrl=null;
+  },
+  cancel:function(){
+    if(Payment._abortCtrl){Payment._abortCtrl.abort();}
+  },
   lookup:async function(){
     var cid=$('payCustomerId').value.trim();
     var cname=$('payCustomerName').value.trim();
     var card=$('payCardLast4').value.trim();
     var txnDate=$('payTxnDate').value.trim();
+    var tableChoice=$('payTableChoice').value;
     if(!cid&&!cname){toast('Enter a Customer ID or Customer Name','error');return}
-    $('payResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Looking up payment...</div>';
-    var r=await api('POST','/api/payment/lookup',{customer_id:cid,customer_name:cname,card_last4:card,transaction_date:txnDate});
+    Payment._abortCtrl=new AbortController();
+    Payment._startLoading();
+    var r;
+    try{
+      var resp=await fetch('/api/payment/lookup',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({customer_id:cid,customer_name:cname,card_last4:card,transaction_date:txnDate,table_choice:tableChoice}),
+        signal:Payment._abortCtrl.signal
+      });
+      var data=await resp.json().catch(function(){return{error:'Server error'}});
+      r={ok:resp.ok,data:data};
+    }catch(e){
+      Payment._stopLoading();
+      if(e.name==='AbortError'){
+        $('payResult').innerHTML='<div class="alert alert-warning">&#10006; Query cancelled by user.</div>';
+      }else{
+        $('payResult').innerHTML='<div class="alert alert-error">Request failed: '+e.message+'</div>';
+      }
+      return;
+    }
+    Payment._stopLoading();
     if(!r.ok){$('payResult').innerHTML='<div class="alert alert-error">'+(r.data.error||'Request failed')+'</div>';return}
     var d=r.data;
+    var tc=d.table_choice||'both';
     var html='';
     // Search method info
     if(d.search_method){html+='<div class="alert alert-info" style="margin-bottom:12px">Search: '+Payment._esc(d.search_method)+'</div>';}
-    // Payment Transactions
-    html+='<div class="card"><div class="card-title">&#128179; Payment Transactions</div>';
-    if(d.transactions&&d.transactions.length){
-      html+='<div class="alert alert-success">'+d.transactions.length+' transaction(s) found</div>';
-      html+='<div class="table-wrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Store</th><th>PaymentClientID</th><th>Status</th><th>Amount</th><th>Card Last 4</th><th>MerchantID</th><th>ExternalTxnID</th><th>Pinless</th><th>Pinless Code</th><th>TransactionID</th></tr></thead><tbody>';
-      d.transactions.forEach(function(t){
-        var statusClass=t.STATUSMESSAGE&&t.STATUSMESSAGE.toLowerCase().indexOf('acknowledged')>=0?'pill-ok':'pill-err';
-        html+='<tr><td style="white-space:nowrap">'+(t.TRANSACTIONDTS||'--')+'</td><td>'+Payment._esc(t.CUSTOMERID)+'</td><td>'+Payment._esc(t.Store)+'</td><td>'+Payment._esc(t.PAYMENTCLIENTID)+'</td><td><span class="pill '+statusClass+'">'+Payment._esc(t.STATUSMESSAGE)+'</span></td><td>$'+(t.AMOUNT||'--')+'</td><td>'+Payment._esc(t.CardLast4)+'</td><td>'+Payment._esc(t.MERCHANTID)+'</td><td>'+Payment._esc(t.EXTERNALTRANSACTIONID)+'</td><td>'+Payment._esc(t.PINLESS_CONVERTED)+'</td><td>'+Payment._esc(t.PINLESS_RESPONSE_CODE)+'</td><td>'+Payment._esc(t.TRANSACTIONID)+'</td></tr>';
-      });
-      html+='</tbody></table></div>';
-      // Analysis guidance
-      html+='<div class="diag-section"><h4>&#128161; Next Steps</h4><ul style="font-size:13px;line-height:1.8;padding-left:18px">';
-      html+='<li><strong>If Status = "Payment voided":</strong> Provide 4-digit card number, date, and exact amount. Assign to ESS Team to verify in IQ Portal. Inform store based on ESS confirmation.</li>';
-      html+='<li><strong>If Status = "Acknowledged":</strong> Proceed to validate receipt in RACPAD.</li>';
-      html+='<li><strong>If Receipt NOT reversed:</strong> Assign to Data Service Team to reverse receipt and refund customer.</li>';
-      html+='<li><strong>If Receipt IS reversed but refund not received:</strong> Send email to Treasury Team for refund processing.</li>';
-      html+='<li><strong>If Receipt partially reversed:</strong> Store must handle remaining refund.</li>';
-      html+='</ul></div>';
-    } else {
-      html+='<div class="alert alert-info">No payment transactions found for this customer.</div>';
+    // Payment Transactions — only show if not "declined only"
+    if(tc!=='declined'){
+      html+='<div class="card"><div class="card-title">&#128179; Payment Transactions</div>';
+      if(d.transactions&&d.transactions.length){
+        html+='<div class="alert alert-success">'+d.transactions.length+' transaction(s) found</div>';
+        html+='<div class="table-wrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Store</th><th>PaymentClientID</th><th>Status</th><th>Amount</th><th>Card Last 4</th><th>MerchantID</th><th>ExternalTxnID</th><th>Pinless</th><th>Pinless Code</th><th>TransactionID</th></tr></thead><tbody>';
+        d.transactions.forEach(function(t){
+          var statusClass=t.STATUSMESSAGE&&t.STATUSMESSAGE.toLowerCase().indexOf('acknowledged')>=0?'pill-ok':'pill-err';
+          html+='<tr><td style="white-space:nowrap">'+(t.TRANSACTIONDTS||'--')+'</td><td>'+Payment._esc(t.CUSTOMERID)+'</td><td>'+Payment._esc(t.Store)+'</td><td>'+Payment._esc(t.PAYMENTCLIENTID)+'</td><td><span class="pill '+statusClass+'">'+Payment._esc(t.STATUSMESSAGE)+'</span></td><td>$'+(t.AMOUNT||'--')+'</td><td>'+Payment._esc(t.CardLast4)+'</td><td>'+Payment._esc(t.MERCHANTID)+'</td><td>'+Payment._esc(t.EXTERNALTRANSACTIONID)+'</td><td>'+Payment._esc(t.PINLESS_CONVERTED)+'</td><td>'+Payment._esc(t.PINLESS_RESPONSE_CODE)+'</td><td>'+Payment._esc(t.TRANSACTIONID)+'</td></tr>';
+        });
+        html+='</tbody></table></div>';
+        // Analysis guidance
+        html+='<div class="diag-section"><h4>&#128161; Next Steps</h4><ul style="font-size:13px;line-height:1.8;padding-left:18px">';
+        html+='<li><strong>If Status = "Payment voided":</strong> Provide 4-digit card number, date, and exact amount. Assign to ESS Team to verify in IQ Portal. Inform store based on ESS confirmation.</li>';
+        html+='<li><strong>If Status = "Acknowledged":</strong> Proceed to validate receipt in RACPAD.</li>';
+        html+='<li><strong>If Receipt NOT reversed:</strong> Assign to Data Service Team to reverse receipt and refund customer.</li>';
+        html+='<li><strong>If Receipt IS reversed but refund not received:</strong> Send email to Treasury Team for refund processing.</li>';
+        html+='<li><strong>If Receipt partially reversed:</strong> Store must handle remaining refund.</li>';
+        html+='</ul></div>';
+      } else {
+        html+='<div class="alert alert-info">No payment transactions found for this customer.</div>';
+      }
+      html+='</div>';
     }
-    html+='</div>';
-    // Declined Transactions
-    html+='<div class="card" style="margin-top:16px"><div class="card-title">&#9888;&#65039; Declined Transactions</div>';
-    if(d.declined&&d.declined.length){
-      html+='<div class="alert alert-warning">'+d.declined.length+' declined transaction(s) found</div>';
-      html+='<div class="table-wrap"><table><thead><tr>';
-      var cols=Object.keys(d.declined[0]);
-      cols.forEach(function(c){html+='<th>'+Payment._esc(c)+'</th>'});
-      html+='</tr></thead><tbody>';
-      d.declined.forEach(function(row){
-        html+='<tr>';cols.forEach(function(c){html+='<td>'+Payment._esc(row[c])+'</td>'});html+='</tr>';
-      });
-      html+='</tbody></table></div>';
-      html+='<div class="diag-section"><h4>&#128161; Declined — Next Steps</h4><p style="font-size:13px">Payment was declined. Inform the store why the payment was declined. <strong>No refund action is required.</strong></p></div>';
-    } else {
-      html+='<div class="alert alert-success">No declined transactions found.</div>';
+    // Declined Transactions — only show if not "transactions only"
+    if(tc!=='transactions'){
+      html+='<div class="card" style="margin-top:16px"><div class="card-title">&#9888;&#65039; Declined Transactions</div>';
+      if(d.declined&&d.declined.length){
+        html+='<div class="alert alert-warning">'+d.declined.length+' declined transaction(s) found</div>';
+        // Fixed column order as specified
+        var decCols=[
+          'TRANSACTIONDTS','STATUSMESSAGE','STATUSCODE','Store',
+          'ACCOUNTNUMBER','AMOUNT','AUTHORIZATIONNUMBER','CARDTYPE',
+          'CREATEDBY','CUSTOMERID','ENTRY_METHOD','EXTERNALTRANSACTIONID',
+          'FIRSTNAME','GLOBALCUSTOMERID','LASTNAME','MERCHANTID',
+          'PAYMENTCLIENTID','PAYMENTMETHODID','PAYMENTPLATFORM','PAYMENTTYPE',
+          'PAYMENT_NETWORK','PINLESS_CONVERTED','PINLESS_RESPONSE_CODE',
+          'RECORDID','TRANSACTIONCOMMAND','TRANSACTIONID'
+        ];
+        html+='<div class="table-wrap"><table><thead><tr>';
+        decCols.forEach(function(c){html+='<th>'+Payment._esc(c)+'</th>'});
+        html+='</tr></thead><tbody>';
+        d.declined.forEach(function(row){
+          html+='<tr>';decCols.forEach(function(c){html+='<td>'+Payment._esc(row[c])+'</td>'});html+='</tr>';
+        });
+        html+='</tbody></table></div>';
+        html+='<div class="diag-section"><h4>&#128161; Declined — Next Steps</h4><p style="font-size:13px">Payment was declined. Inform the store why the payment was declined. <strong>No refund action is required.</strong></p></div>';
+      } else {
+        html+='<div class="alert alert-success">No declined transactions found.</div>';
+      }
+      html+='</div>';
     }
-    html+='</div>';
     $('payResult').innerHTML=html;
   },
   _esc:function(s){if(s==null)return'—';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
