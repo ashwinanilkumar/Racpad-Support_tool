@@ -778,12 +778,21 @@ def api_payment_lookup():
     data = request.json or {}
     customer_id = (data.get("customer_id") or "").strip()
     customer_name = (data.get("customer_name") or "").strip()
+    customer_first_name = (data.get("customer_first_name") or "").strip()
+    customer_last_name = (data.get("customer_last_name") or "").strip()
     card_last4 = (data.get("card_last4") or "").strip()
     transaction_date = (data.get("transaction_date") or "").strip()
     # table_choice: "both" | "transactions" | "declined"
     table_choice = (data.get("table_choice") or "both").strip()
 
-    if not customer_id and not customer_name:
+    # Backward compatibility for older clients still sending a single full name.
+    if not customer_first_name and not customer_last_name and customer_name:
+        name_parts = customer_name.split()
+        if name_parts:
+            customer_first_name = name_parts[0]
+            customer_last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+
+    if not customer_id and not (customer_first_name or customer_last_name or customer_name):
         return jsonify({"error": "Customer ID or Customer Name is required."}), 400
 
     try:
@@ -810,6 +819,57 @@ def api_payment_lookup():
         if transaction_date:
             extra_where.append("DATE(TRANSACTIONDTS) = %(transaction_date)s")
             extra_params["transaction_date"] = transaction_date
+            date_range_label = f"Date: {transaction_date}"
+            id_date_filter = ""
+            name_date_filter_1 = ""
+            name_date_filter_2 = ""
+        else:
+            # Customer ID searches are indexed → allow 1 year.
+            # Name searches are expensive → try 90 days first, expand to 180 if empty.
+            id_date_filter = "TRANSACTIONDTS >= (CURRENT_DATE - INTERVAL 365 DAY)"
+            name_date_filter_1 = "TRANSACTIONDTS >= (CURRENT_DATE - INTERVAL 90 DAY)"
+            name_date_filter_2 = "TRANSACTIONDTS >= (CURRENT_DATE - INTERVAL 180 DAY)"
+            date_range_label = ""
+
+        def _build_name_filters(full_name: str, first_name: str, last_name: str, pfx: str):
+            """Build WHERE clauses for FIRSTNAME/LASTNAME.
+            Uses direct = comparisons (no function wrapping) so MySQL can use indexes.
+            """
+            clauses = []
+            params = {}
+
+            first = (first_name or "").strip()
+            last = (last_name or "").strip()
+            full = (full_name or "").strip()
+
+            if first and last:
+                clauses = [
+                    f"FIRSTNAME = %({pfx}_firstname)s",
+                    f"LASTNAME = %({pfx}_lastname)s",
+                ]
+                params[f"{pfx}_firstname"] = first
+                params[f"{pfx}_lastname"] = last
+                return clauses, params
+
+            if full:
+                tokens = full.split()
+                if len(tokens) >= 2:
+                    first = tokens[0]
+                    last = " ".join(tokens[1:])
+                    clauses = [
+                        f"FIRSTNAME = %({pfx}_firstname)s",
+                        f"LASTNAME = %({pfx}_lastname)s",
+                    ]
+                    params[f"{pfx}_firstname"] = first
+                    params[f"{pfx}_lastname"] = last
+                else:
+                    token = tokens[0]
+                    clauses = [
+                        f"(FIRSTNAME = %({pfx}_token)s OR LASTNAME = %({pfx}_token)s)"
+                    ]
+                    params[f"{pfx}_token"] = token
+
+            return clauses, params
 
         DECLINED_COLS = """
             TRANSACTIONDTS, STATUSMESSAGE, STATUSCODE,
@@ -824,7 +884,9 @@ def api_payment_lookup():
         # ── Transactions only ────────────────────────────────────────────────
         if table_choice in ("both", "transactions"):
             if customer_id:
-                where_clauses = ["CUSTOMERID = %(customer_id)s"] + extra_where
+                id_where = ["CUSTOMERID = %(customer_id)s"] + extra_where
+                if id_date_filter:
+                    id_where.append(id_date_filter)
                 params = {"customer_id": customer_id, **extra_params}
                 payment_sql = f"""
                     SELECT
@@ -835,77 +897,119 @@ def api_payment_lookup():
                       MERCHANTID, EXTERNALTRANSACTIONID,
                       PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
                     FROM ESBPAYADM01.PAYMENTTRANSACTION
-                    WHERE {' AND '.join(where_clauses)}
+                    WHERE {' AND '.join(id_where)}
                     ORDER BY TRANSACTIONDTS DESC
+                    LIMIT 500
                 """
                 transactions = execute_mysql_query(conn, payment_sql, params)
-                search_method = f"Customer ID: {customer_id} — Payment Transactions"
+                search_method = f"Customer ID: {customer_id} — Payment Transactions ({date_range_label or 'Last 1 year'})"
 
-            if not transactions and customer_name:
-                # Split name into first/last — supports "First Last" or just one word
-                name_parts = customer_name.strip().split()
-                firstname = name_parts[0] if len(name_parts) >= 1 else ""
-                lastname  = name_parts[1] if len(name_parts) >= 2 else ""
-
-                name_where = []
+            if not transactions and (customer_name or customer_first_name or customer_last_name):
+                name_where, name_only_params = _build_name_filters(
+                    customer_name,
+                    customer_first_name,
+                    customer_last_name,
+                    "txn"
+                )
                 name_params = {**extra_params}
-                if firstname and lastname:
-                    name_where = ["FIRSTNAME = %(firstname)s", "LASTNAME = %(lastname)s"]
-                    name_params.update({"firstname": firstname, "lastname": lastname})
-                elif firstname:
-                    name_where = ["FIRSTNAME = %(firstname)s"]
-                    name_params.update({"firstname": firstname})
+                name_params.update(name_only_params)
 
-                where_clauses = name_where + extra_where
-                if where_clauses:
-                    payment_sql = f"""
-                        SELECT
-                          TRANSACTIONDTS, CUSTOMERID,
-                          ACCOUNTLOCATIONNUMBER AS Store,
-                          PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
-                          RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
-                          MERCHANTID, EXTERNALTRANSACTIONID,
-                          PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
-                        FROM ESBPAYADM01.PAYMENTTRANSACTION
-                        WHERE {' AND '.join(where_clauses)}
-                        ORDER BY TRANSACTIONDTS DESC
-                    """
-                    try:
-                        transactions = execute_mysql_query(conn, payment_sql, name_params)
-                    except Exception:
-                        transactions = []
-                search_method = f"Customer Name: {customer_name} — Payment Transactions"
+                # Tiered date approach for name searches: 90 days first, then 180 days
+                for attempt_filter, attempt_label in [
+                    (name_date_filter_1, "Last 3 months"),
+                    (name_date_filter_2, "Last 6 months"),
+                ]:
+                    where_clauses = name_where + extra_where
+                    if attempt_filter:
+                        where_clauses.append(attempt_filter)
+                    if where_clauses:
+                        payment_sql = f"""
+                            SELECT
+                              TRANSACTIONDTS, CUSTOMERID,
+                              ACCOUNTLOCATIONNUMBER AS Store,
+                              PAYMENTCLIENTID, STATUSMESSAGE, AMOUNT,
+                              RIGHT(TRANSACTIONCOMMAND, 4) AS CardLast4,
+                              MERCHANTID, EXTERNALTRANSACTIONID,
+                              PINLESS_CONVERTED, PINLESS_RESPONSE_CODE, TRANSACTIONID
+                            FROM ESBPAYADM01.PAYMENTTRANSACTION
+                            WHERE {' AND '.join(where_clauses)}
+                            ORDER BY TRANSACTIONDTS DESC
+                            LIMIT 500
+                        """
+                        try:
+                            transactions = execute_mysql_query(conn, payment_sql, name_params)
+                        except Exception:
+                            transactions = []
+                    if transactions:
+                        date_range_label = attempt_label
+                        break
+                    date_range_label = attempt_label
+
+                searched_name = (f"{customer_first_name} {customer_last_name}".strip() or customer_name)
+                search_method = f"Customer Name: {searched_name} — Payment Transactions ({date_range_label})"
 
         # ── Declined only ────────────────────────────────────────────────────
         if table_choice == "declined" or (table_choice == "both" and not transactions):
             declined_where = []
             declined_params = {**extra_params}
+            is_name_search = False
             if customer_id:
                 declined_where.append("CUSTOMERID = %(customer_id)s")
                 declined_params["customer_id"] = customer_id
-            elif customer_name:
-                dec_name_parts = customer_name.strip().split()
-                dec_firstname = dec_name_parts[0] if len(dec_name_parts) >= 1 else ""
-                dec_lastname  = dec_name_parts[1] if len(dec_name_parts) >= 2 else ""
-                if dec_firstname and dec_lastname:
-                    declined_where += ["FIRSTNAME = %(dec_firstname)s", "LASTNAME = %(dec_lastname)s"]
-                    declined_params.update({"dec_firstname": dec_firstname, "dec_lastname": dec_lastname})
-                elif dec_firstname:
-                    declined_where.append("FIRSTNAME = %(dec_firstname)s")
-                    declined_params["dec_firstname"] = dec_firstname
+            elif customer_name or customer_first_name or customer_last_name:
+                is_name_search = True
+                dec_where, dec_only_params = _build_name_filters(
+                    customer_name,
+                    customer_first_name,
+                    customer_last_name,
+                    "dec"
+                )
+                declined_where += dec_where
+                declined_params.update(dec_only_params)
 
             if declined_where:
-                all_where = declined_where + extra_where
-                declined_sql = f"""
-                    SELECT {DECLINED_COLS}
-                    FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
-                    WHERE {' AND '.join(all_where)}
-                """
-                declined = execute_mysql_query(conn, declined_sql, declined_params)
+                if is_name_search and not transaction_date:
+                    # Tiered for name: 90 days then 180 days
+                    for dec_filter, dec_label in [
+                        (name_date_filter_1, "Last 3 months"),
+                        (name_date_filter_2, "Last 6 months"),
+                    ]:
+                        all_where = declined_where + extra_where
+                        if dec_filter:
+                            all_where.append(dec_filter)
+                        declined_sql = f"""
+                            SELECT {DECLINED_COLS}
+                            FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
+                            WHERE {' AND '.join(all_where)}
+                            ORDER BY TRANSACTIONDTS DESC
+                            LIMIT 500
+                        """
+                        declined = execute_mysql_query(conn, declined_sql, declined_params)
+                        if declined:
+                            date_range_label = dec_label
+                            break
+                        date_range_label = dec_label
+                else:
+                    all_where = declined_where + extra_where
+                    if not transaction_date and id_date_filter:
+                        all_where.append(id_date_filter)
+                    declined_sql = f"""
+                        SELECT {DECLINED_COLS}
+                        FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
+                        WHERE {' AND '.join(all_where)}
+                        ORDER BY TRANSACTIONDTS DESC
+                        LIMIT 500
+                    """
+                    declined = execute_mysql_query(conn, declined_sql, declined_params)
+
                 if table_choice == "declined":
-                    search_method = f"{'Customer ID: ' + customer_id if customer_id else 'Customer Name: ' + customer_name} — Declined Transactions"
+                    if customer_id:
+                        search_method = f"Customer ID: {customer_id} — Declined Transactions ({date_range_label or 'Last 1 year'})"
+                    else:
+                        searched_name = (f"{customer_first_name} {customer_last_name}".strip() or customer_name)
+                        search_method = f"Customer Name: {searched_name} — Declined Transactions ({date_range_label})"
                 elif not search_method:
-                    search_method = "Declined table lookup (no results in Payment Transactions)"
+                    search_method = f"Declined table lookup — no results in Payment Transactions ({date_range_label})"
 
         # ── Both: also fetch declined when transactions found ────────────────
         elif table_choice == "both" and transactions and customer_id:
@@ -913,6 +1017,8 @@ def api_payment_lookup():
                 SELECT {DECLINED_COLS}
                 FROM ESBPAYADM01.PAYMENT_TRANSACTION_DECLINED
                 WHERE CUSTOMERID = %(customer_id)s
+                ORDER BY TRANSACTIONDTS DESC
+                LIMIT 500
             """
             declined = execute_mysql_query(conn, declined_sql, {"customer_id": customer_id})
 
@@ -923,7 +1029,7 @@ def api_payment_lookup():
 
     result = {
         "customer_id": customer_id,
-        "customer_name": customer_name,
+        "customer_name": f"{customer_first_name} {customer_last_name}".strip() or customer_name,
         "search_method": search_method,
         "table_choice": table_choice,
         "transactions": transactions,
