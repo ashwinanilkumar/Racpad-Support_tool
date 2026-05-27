@@ -95,6 +95,7 @@ tr:hover td{background:var(--accent-light)}
     <div class="nav-item active" data-page="pricing" onclick="Nav.go('pricing')"><span class="icon">&#128176;</span>Pricing Alert</div>
   <div class="nav-item" data-page="po622" onclick="Nav.go('po622')"><span class="icon">&#128269;</span>P0622 - Receive PO Error</div>
     <div class="nav-item" data-page="appconfig" onclick="Nav.go('appconfig')"><span class="icon">&#9881;</span>App Config Triage</div>
+    <div class="nav-item" data-page="payment" onclick="Nav.go('payment')"><span class="icon">&#128179;</span>Customer Payment</div>
     <div class="nav-label" style="margin-top:20px">Administration</div>
     <div class="nav-item" data-page="network" onclick="Nav.go('network')"><span class="icon">&#127760;</span>Network Check</div>
     <div class="nav-item" data-page="setup" onclick="Nav.go('setup')"><span class="icon">&#9881;</span>Setup</div>
@@ -149,6 +150,36 @@ tr:hover td{background:var(--accent-light)}
     <div id="cfgResult"></div>
     <div id="cfgDiffPanel" style="display:none"></div>
   </div>
+  <div class="page" id="page-payment">
+    <h1 class="page-title">Customer Payment</h1>
+    <p class="page-desc">Validate customer payment transactions in the Payment DB (MySQL).</p>
+    <div class="card">
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>Query Table</label>
+          <select id="payTableChoice" style="margin-top:4px">
+            <option value="both">Both Tables (auto-fallback)</option>
+            <option value="transactions">Payment Transactions only</option>
+            <option value="declined">Declined Transactions only</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Customer ID</label><input id="payCustomerId" placeholder="e.g. 111719049"/></div>
+        <div class="form-group"><label>Customer Name <span style="font-size:11px;color:var(--text-sec)">(e.g. JUSTIN ALMAGUER)</span></label><input id="payCustomerName" placeholder="e.g. JUSTIN ALMAGUER"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Card Last 4 <span style="font-size:11px;color:var(--text-sec)">(optional)</span></label><input id="payCardLast4" placeholder="e.g. 0824" maxlength="4"/></div>
+        <div class="form-group"><label>Transaction Date <span style="font-size:11px;color:var(--text-sec)">(optional)</span></label><input id="payTxnDate" type="date"/></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button id="payLookupBtn" class="btn btn-primary" onclick="Payment.lookup()">&#128270; Look Up Payment</button>
+        <button id="payCancelBtn" class="btn btn-danger" style="display:none" onclick="Payment.cancel()">&#10006; Cancel</button>
+        <span id="payTimer" style="font-size:12px;color:var(--text-sec);display:none"></span>
+      </div>
+    </div>
+    <div id="payResult" style="margin-top:16px"></div>
+  </div>
   <div class="page" id="page-network">
     <h1 class="page-title">Network Connectivity</h1>
     <p class="page-desc">Test TCP connectivity to SMTP, RAC DB, Pricing DB, and Config DB.</p>
@@ -161,7 +192,7 @@ tr:hover td{background:var(--accent-light)}
     <h1 class="page-title">Setup</h1>
     <p class="page-desc">Configure email and database credentials.</p>
     <div class="card"><div class="card-title">&#128231; Email (SMTP)</div><div class="form-row"><div class="form-group"><label>SMTP User</label><input id="smtpUser" placeholder="user@domain.com"/></div><div class="form-group"><label>SMTP Password</label><input id="smtpPass" type="password"/></div></div><div class="form-row"><div class="form-group"><label>SMTP Host</label><input id="smtpHost" value="smtp.office365.com"/></div><div class="form-group"><label>SMTP Port</label><input id="smtpPort" value="587"/></div></div><button class="btn btn-primary btn-sm" onclick="Setup.saveEmail()">Save Email Settings</button><div id="emailSetupAlert" style="margin-top:10px"></div></div>
-    <div class="card"><div class="card-title">&#128451; Database Credentials <span style="font-size:.75rem;font-weight:400;color:var(--text-sec);">(Kerberos)</span></div><h4 style="font-size:.78rem;color:var(--text-sec);margin-bottom:8px">RAC Database</h4><div class="form-row"><div class="form-group"><label>Host</label><input id="racHost"/></div><div class="form-group"><label>Port</label><input id="racPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="racDb" value="racdb"/></div><div class="form-group"><label>User</label><input id="racUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Pricing Database</h4><div class="form-row"><div class="form-group"><label>Host</label><input id="prcHost"/></div><div class="form-group"><label>Port</label><input id="prcPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="prcDb" value="prcdb"/></div><div class="form-group"><label>User</label><input id="prcUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Config Database <span style="font-weight:400;font-size:.72rem">(configadm schema)</span></h4><div class="form-row"><div class="form-group"><label>Host</label><input id="cfgHost"/></div><div class="form-group"><label>Port</label><input id="cfgPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="cfgDb" value="configdb"/></div><div class="form-group"><label>User</label><input id="cfgUser"/></div></div><button class="btn btn-primary btn-sm" onclick="Setup.saveDb()">Save DB Settings</button><div id="dbSetupAlert" style="margin-top:10px"></div></div>
+    <div class="card"><div class="card-title">&#128451; Database Credentials <span style="font-size:.75rem;font-weight:400;color:var(--text-sec);">(Kerberos)</span></div><h4 style="font-size:.78rem;color:var(--text-sec);margin-bottom:8px">RAC Database</h4><div class="form-row"><div class="form-group"><label>Host</label><input id="racHost"/></div><div class="form-group"><label>Port</label><input id="racPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="racDb" value="racdb"/></div><div class="form-group"><label>User</label><input id="racUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Pricing Database</h4><div class="form-row"><div class="form-group"><label>Host</label><input id="prcHost"/></div><div class="form-group"><label>Port</label><input id="prcPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="prcDb" value="prcdb"/></div><div class="form-group"><label>User</label><input id="prcUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Config Database <span style="font-weight:400;font-size:.72rem">(configadm schema)</span></h4><div class="form-row"><div class="form-group"><label>Host</label><input id="cfgHost"/></div><div class="form-group"><label>Port</label><input id="cfgPort" value="5432"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="cfgDb" value="configdb"/></div><div class="form-group"><label>User</label><input id="cfgUser"/></div></div><h4 style="font-size:.78rem;color:var(--text-sec);margin:16px 0 8px">Payment Database <span style="font-weight:400;font-size:.72rem">(MySQL — ESBPAYADM01)</span></h4><div class="form-row"><div class="form-group"><label>Host</label><input id="payHost" placeholder="prod-payments-db.rentacenter.com"/></div><div class="form-group"><label>Port</label><input id="payPort" value="3306"/></div></div><div class="form-row"><div class="form-group"><label>DB Name</label><input id="payDb" placeholder="(optional)"/></div><div class="form-group"><label>User</label><input id="payUser"/></div></div><div class="form-row"><div class="form-group"><label>Password</label><input id="payPass" type="password"/></div></div><button class="btn btn-primary btn-sm" onclick="Setup.saveDb()">Save DB Settings</button><div id="dbSetupAlert" style="margin-top:10px"></div></div>
     <div class="card"><div class="card-title">&#128465; Clear All Credentials</div><p style="font-size:.82rem;color:var(--text-sec);margin-bottom:12px">Remove all saved credentials from keyring.</p><button class="btn btn-danger btn-sm" onclick="Setup.clearAll()">Clear Credentials</button></div>
   </div>
 </div>
@@ -174,9 +205,9 @@ var Nav={go:function(page){document.querySelectorAll('.page').forEach(function(p
 function toggleTheme(){var html=document.documentElement;var next=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',next);localStorage.setItem('theme',next);$('themeIcon').innerHTML=next==='dark'?'&#9728;&#65039;':'&#127769;';$('themeLabel').textContent=next==='dark'?'Light Mode':'Dark Mode'}
 (function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);if(t==='dark'){$('themeIcon').innerHTML='&#9728;&#65039;';$('themeLabel').textContent='Light Mode'}})();
 async function init(){var r=await api('GET','/api/status');if(!r.ok){toast('Cannot reach server','error');Nav.go('setup');return}var d=r.data;if(!d.email_configured||!d.db_configured){Nav.go('setup');toast('Please complete setup first','info')}loadSavedCreds()}
-async function loadSavedCreds(){var r=await api('GET','/api/credentials/saved');if(!r.ok)return;var d=r.data;if(d.smtp_user)$('smtpUser').value=d.smtp_user;if(d.smtp_password)$('smtpPass').value=d.smtp_password;if(d.smtp_host)$('smtpHost').value=d.smtp_host;if(d.smtp_port)$('smtpPort').value=d.smtp_port;if(d.rac_host)$('racHost').value=d.rac_host;if(d.rac_port)$('racPort').value=d.rac_port;if(d.rac_dbname)$('racDb').value=d.rac_dbname;if(d.rac_user)$('racUser').value=d.rac_user;if(d.prc_host)$('prcHost').value=d.prc_host;if(d.prc_port)$('prcPort').value=d.prc_port;if(d.prc_dbname)$('prcDb').value=d.prc_dbname;if(d.prc_user)$('prcUser').value=d.prc_user;if(d.cfg_host)$('cfgHost').value=d.cfg_host;if(d.cfg_port)$('cfgPort').value=d.cfg_port;if(d.cfg_dbname)$('cfgDb').value=d.cfg_dbname;if(d.cfg_user)$('cfgUser').value=d.cfg_user}
+async function loadSavedCreds(){var r=await api('GET','/api/credentials/saved');if(!r.ok)return;var d=r.data;if(d.smtp_user)$('smtpUser').value=d.smtp_user;if(d.smtp_password)$('smtpPass').value=d.smtp_password;if(d.smtp_host)$('smtpHost').value=d.smtp_host;if(d.smtp_port)$('smtpPort').value=d.smtp_port;if(d.rac_host)$('racHost').value=d.rac_host;if(d.rac_port)$('racPort').value=d.rac_port;if(d.rac_dbname)$('racDb').value=d.rac_dbname;if(d.rac_user)$('racUser').value=d.rac_user;if(d.prc_host)$('prcHost').value=d.prc_host;if(d.prc_port)$('prcPort').value=d.prc_port;if(d.prc_dbname)$('prcDb').value=d.prc_dbname;if(d.prc_user)$('prcUser').value=d.prc_user;if(d.cfg_host)$('cfgHost').value=d.cfg_host;if(d.cfg_port)$('cfgPort').value=d.cfg_port;if(d.cfg_dbname)$('cfgDb').value=d.cfg_dbname;if(d.cfg_user)$('cfgUser').value=d.cfg_user;if(d.pay_host)$('payHost').value=d.pay_host;if(d.pay_port)$('payPort').value=d.pay_port;if(d.pay_dbname)$('payDb').value=d.pay_dbname;if(d.pay_user)$('payUser').value=d.pay_user}
 init();
-var Setup={saveEmail:async function(){var b={smtp_user:$('smtpUser').value,smtp_password:$('smtpPass').value,smtp_host:$('smtpHost').value,smtp_port:$('smtpPort').value};var r=await api('POST','/api/setup/email',b);$('emailSetupAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok){toast('Email saved!','success');init()}},saveDb:async function(){var b={rac_host:$('racHost').value,rac_port:$('racPort').value,rac_dbname:$('racDb').value,rac_user:$('racUser').value,rac_password:'',prc_host:$('prcHost').value,prc_port:$('prcPort').value,prc_dbname:$('prcDb').value,prc_user:$('prcUser').value,prc_password:'',cfg_host:$('cfgHost').value,cfg_port:$('cfgPort').value,cfg_dbname:$('cfgDb').value,cfg_user:$('cfgUser').value,cfg_password:''};var r=await api('POST','/api/setup/db',b);$('dbSetupAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok){toast('DB credentials saved!','success');init()}},clearAll:async function(){if(!confirm('Clear all saved credentials?'))return;var r=await api('DELETE','/api/credentials');if(r.ok){toast('Credentials cleared','success');loadSavedCreds()}else toast(r.data.error,'error')}};
+var Setup={saveEmail:async function(){var b={smtp_user:$('smtpUser').value,smtp_password:$('smtpPass').value,smtp_host:$('smtpHost').value,smtp_port:$('smtpPort').value};var r=await api('POST','/api/setup/email',b);$('emailSetupAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok){toast('Email saved!','success');init()}},saveDb:async function(){var b={rac_host:$('racHost').value,rac_port:$('racPort').value,rac_dbname:$('racDb').value,rac_user:$('racUser').value,rac_password:'',prc_host:$('prcHost').value,prc_port:$('prcPort').value,prc_dbname:$('prcDb').value,prc_user:$('prcUser').value,prc_password:'',cfg_host:$('cfgHost').value,cfg_port:$('cfgPort').value,cfg_dbname:$('cfgDb').value,cfg_user:$('cfgUser').value,cfg_password:'',pay_host:$('payHost').value,pay_port:$('payPort').value,pay_dbname:$('payDb').value,pay_user:$('payUser').value,pay_password:$('payPass').value};var r=await api('POST','/api/setup/db',b);$('dbSetupAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok){toast('DB credentials saved!','success');init()}},clearAll:async function(){if(!confirm('Clear all saved credentials?'))return;var r=await api('DELETE','/api/credentials');if(r.ok){toast('Credentials cleared','success');loadSavedCreds()}else toast(r.data.error,'error')}};
 var Pricing={_result:null,fetch:async function(){var po=$('poPo').value.trim(),store=$('poStore').value.trim();if(!po||!store){toast('Enter PO and Store number','error');return}$('pricingResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Fetching...</div>';$('pricingEmailSection').style.display='none';var r=await api('POST','/api/pricing/fetch',{po_number:po,store_number:store});if(!r.ok){$('pricingResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}Pricing._result=r.data;var d=r.data;var html='<div class="card"><div class="card-title">Results for PO '+d.po_number+' / Store '+d.store_number+'</div>';var unpriced=d.items.filter(function(i){return!i.has_pricing});if(unpriced.length)html+='<div class="alert alert-error">'+unpriced.length+' item(s) missing pricing</div>';else html+='<div class="alert alert-success">All items have pricing</div>';html+='<div class="table-wrap"><table><thead><tr><th>Item</th><th>Model</th><th>Priced</th><th>Weekly</th><th>Monthly</th><th>Cash Price</th></tr></thead><tbody>';d.items.forEach(function(i){var x=i.details||{};html+='<tr><td>'+i.item+'</td><td>'+(i.model_number||'--')+'</td><td>'+(i.has_pricing?'<span class="pill pill-ok">Yes</span>':'<span class="pill pill-err">No</span>')+'</td><td>'+(x.weekly_rate||'--')+'</td><td>'+(x.monthly_rate||'--')+'</td><td>'+(x.cash_price||'--')+'</td></tr>'});html+='</tbody></table></div>';html+='</div>';$('pricingResult').innerHTML=html;Pricing._po=po;Pricing._store=store;var models=d.items.map(function(i){return i.model_number;}).filter(Boolean).join(', ');if(models)$('pricingEmailModels').value=models;Pricing._buildBody();Pricing.refreshSubject();$('pricingEmailSection').style.display='block'},sendAlert:async function(){if(!Pricing._result){toast('No result','error');return}var r=await api('POST','/api/pricing/send-alert',{result:Pricing._result});if(r.ok)toast(r.data.message,'success');else toast(r.data.error,'error')},refreshSubject:function(){var incNo=($('pricingIncidentNo').value||'').trim();var incDesc=($('pricingIncidentDesc').value||'').trim();var subj='';if(incNo){subj='Regarding '+incNo+(incDesc?' - '+incDesc:'');}else{subj='Pricing Alert — PO '+(Pricing._po||$('poPo').value)+' | Store '+(Pricing._store||$('poStore').value);}$('pricingEmailSubject').value=subj;},refreshBody:function(){Pricing._buildBody();},_buildBody:function(){var po=Pricing._po||$('poPo').value;var store=Pricing._store||$('poStore').value;var recipientName=($('pricingEmailName').value||'Pricing').trim();var allItems=Pricing._result?Pricing._result.items:[];var unpricedItems=allItems.filter(function(i){return!i.has_pricing;});var itemsToUse=unpricedItems.length>0?unpricedItems:allItems;var body='Hi @'+recipientName+',\n\n';if(itemsToUse.length>0){itemsToUse.forEach(function(item){var rmsId=item.item||'';var model=item.model_number||'N/A';body+='Regarding PO: '+po+', the CW is currently unable to receive the RMS item '+rmsId+' and is encountering the following error message:\n\n';body+='    Unable to receive purchase order. Please try again later.\n';body+='    Outbound Message: Pricing details not found for the rms item id '+rmsId+'\n\n';body+='PO           : '+po+'\n';body+='RMSItemNumber: '+rmsId+'\n';body+='Model        : '+model+'\n';body+='Store        : '+store+'\n\n';});}else{var rawModels=$('pricingEmailModels').value.trim();var models=rawModels?rawModels.split(',').map(function(m){return m.trim();}).filter(Boolean):[];models.forEach(function(m){body+='Regarding PO: '+po+', the CW is currently unable to receive the following item and is encountering a pricing error:\n\n';body+='PO           : '+po+'\n';body+='Model        : '+m+'\n';body+='Store        : '+store+'\n\n';});}body+='Regards,\nRacpad Support Team';$('pricingEmailBody').value=body;},sendEmail:async function(){var b={po_number:$('poPo').value,store_number:$('poStore').value,recipient_email:$('pricingEmailTo').value,recipient_name:$('pricingEmailName').value,model_lines:$('pricingEmailModels').value,email_body:$('pricingEmailBody').value,cc:$('pricingEmailCc').value,incident_number:$('pricingIncidentNo').value,incident_description:$('pricingIncidentDesc').value};var r=await api('POST','/api/pricing/send-email',b);$('pricingEmailAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok)toast(r.data.message,'success')}};
 var PO622={diagnose:async function(){var po=$('diagPo').value.trim(),store=$('diagStore').value.trim();if(!po||!store){toast('Enter PO and Store number','error');return}$('diagResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Diagnosing...</div>';$('emailSection').style.display='none';var r=await api('POST','/api/po622/diagnose',{po_number:po,store_number:store});if(!r.ok){$('diagResult').innerHTML='<div class="alert alert-error">'+r.data.error+'</div>';return}var d=r.data;var html='<div class="card"><div class="card-title">Diagnostic Results - PO '+d.po_number+' / Store '+d.store_number+'</div>';
 if(d.overview&&d.overview.length){var ov=d.overview[0];html+='<div class="diag-section"><h4>PO Overview</h4><div class="table-wrap"><table><tbody><tr><td><strong>Status</strong></td><td><span class="pill '+(ov.po_status==='RCV'?'pill-ok':'pill-err')+'">'+ov.po_status+' - '+(ov.po_status_description||'')+'</span></td></tr><tr><td><strong>Type</strong></td><td>'+ov.po_type+' - '+(ov.po_type_description||'')+'</td></tr><tr><td><strong>Order Date</strong></td><td>'+(ov.order_date||'--')+'</td></tr><tr><td><strong>Est. Delivery</strong></td><td>'+(ov.estimated_delivery_date||'--')+'</td></tr><tr><td><strong>Close Date</strong></td><td>'+(ov.close_date||'--')+'</td></tr><tr><td><strong>Created By</strong></td><td>'+(ov.created_by||'--')+'</td></tr></tbody></table></div></div>'}
@@ -351,6 +382,126 @@ var AppConfig={
     var blob=new Blob([lines.join('\n')],{type:'text/csv'});
     var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='appconfig_export.csv';a.click();
     toast('CSV exported','success');
+  },
+  _esc:function(s){if(s==null)return'—';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+};
+var Payment={
+  _abortCtrl: null,
+  _timerInterval: null,
+  _startTime: null,
+  onTableChange:function(){},
+  _startLoading:function(){
+    $('payLookupBtn').disabled=true;
+    $('payLookupBtn').innerHTML='<span class="spinner"></span> Looking up...';
+    $('payCancelBtn').style.display='inline-flex';
+    $('payTimer').style.display='inline';
+    Payment._startTime=Date.now();
+    Payment._timerInterval=setInterval(function(){
+      var elapsed=((Date.now()-Payment._startTime)/1000).toFixed(1);
+      $('payTimer').textContent=elapsed+'s elapsed';
+    },100);
+    $('payResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Running query...</div>';
+  },
+  _stopLoading:function(){
+    $('payLookupBtn').disabled=false;
+    $('payLookupBtn').innerHTML='&#128270; Look Up Payment';
+    $('payCancelBtn').style.display='none';
+    $('payTimer').style.display='none';
+    clearInterval(Payment._timerInterval);
+    Payment._timerInterval=null;
+    Payment._abortCtrl=null;
+  },
+  cancel:function(){
+    if(Payment._abortCtrl){Payment._abortCtrl.abort();}
+  },
+  lookup:async function(){
+    var cid=$('payCustomerId').value.trim();
+    var cname=$('payCustomerName').value.trim();
+    var card=$('payCardLast4').value.trim();
+    var txnDate=$('payTxnDate').value.trim();
+    var tableChoice=$('payTableChoice').value;
+    if(!cid&&!cname){toast('Enter a Customer ID or Customer Name','error');return}
+    Payment._abortCtrl=new AbortController();
+    Payment._startLoading();
+    var r;
+    try{
+      var resp=await fetch('/api/payment/lookup',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({customer_id:cid,customer_name:cname,card_last4:card,transaction_date:txnDate,table_choice:tableChoice}),
+        signal:Payment._abortCtrl.signal
+      });
+      var data=await resp.json().catch(function(){return{error:'Server error'}});
+      r={ok:resp.ok,data:data};
+    }catch(e){
+      Payment._stopLoading();
+      if(e.name==='AbortError'){
+        $('payResult').innerHTML='<div class="alert alert-warning">&#10006; Query cancelled by user.</div>';
+      }else{
+        $('payResult').innerHTML='<div class="alert alert-error">Request failed: '+e.message+'</div>';
+      }
+      return;
+    }
+    Payment._stopLoading();
+    if(!r.ok){$('payResult').innerHTML='<div class="alert alert-error">'+(r.data.error||'Request failed')+'</div>';return}
+    var d=r.data;
+    var tc=d.table_choice||'both';
+    var html='';
+    // Search method info
+    if(d.search_method){html+='<div class="alert alert-info" style="margin-bottom:12px">Search: '+Payment._esc(d.search_method)+'</div>';}
+    // Payment Transactions — only show if not "declined only"
+    if(tc!=='declined'){
+      html+='<div class="card"><div class="card-title">&#128179; Payment Transactions</div>';
+      if(d.transactions&&d.transactions.length){
+        html+='<div class="alert alert-success">'+d.transactions.length+' transaction(s) found</div>';
+        html+='<div class="table-wrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Store</th><th>PaymentClientID</th><th>Status</th><th>Amount</th><th>Card Last 4</th><th>MerchantID</th><th>ExternalTxnID</th><th>Pinless</th><th>Pinless Code</th><th>TransactionID</th></tr></thead><tbody>';
+        d.transactions.forEach(function(t){
+          var statusClass=t.STATUSMESSAGE&&t.STATUSMESSAGE.toLowerCase().indexOf('acknowledged')>=0?'pill-ok':'pill-err';
+          html+='<tr><td style="white-space:nowrap">'+(t.TRANSACTIONDTS||'--')+'</td><td>'+Payment._esc(t.CUSTOMERID)+'</td><td>'+Payment._esc(t.Store)+'</td><td>'+Payment._esc(t.PAYMENTCLIENTID)+'</td><td><span class="pill '+statusClass+'">'+Payment._esc(t.STATUSMESSAGE)+'</span></td><td>$'+(t.AMOUNT||'--')+'</td><td>'+Payment._esc(t.CardLast4)+'</td><td>'+Payment._esc(t.MERCHANTID)+'</td><td>'+Payment._esc(t.EXTERNALTRANSACTIONID)+'</td><td>'+Payment._esc(t.PINLESS_CONVERTED)+'</td><td>'+Payment._esc(t.PINLESS_RESPONSE_CODE)+'</td><td>'+Payment._esc(t.TRANSACTIONID)+'</td></tr>';
+        });
+        html+='</tbody></table></div>';
+        // Analysis guidance
+        html+='<div class="diag-section"><h4>&#128161; Next Steps</h4><ul style="font-size:13px;line-height:1.8;padding-left:18px">';
+        html+='<li><strong>If Status = "Payment voided":</strong> Provide 4-digit card number, date, and exact amount. Assign to ESS Team to verify in IQ Portal. Inform store based on ESS confirmation.</li>';
+        html+='<li><strong>If Status = "Acknowledged":</strong> Proceed to validate receipt in RACPAD.</li>';
+        html+='<li><strong>If Receipt NOT reversed:</strong> Assign to Data Service Team to reverse receipt and refund customer.</li>';
+        html+='<li><strong>If Receipt IS reversed but refund not received:</strong> Send email to Treasury Team for refund processing.</li>';
+        html+='<li><strong>If Receipt partially reversed:</strong> Store must handle remaining refund.</li>';
+        html+='</ul></div>';
+      } else {
+        html+='<div class="alert alert-info">No payment transactions found for this customer.</div>';
+      }
+      html+='</div>';
+    }
+    // Declined Transactions — only show if not "transactions only"
+    if(tc!=='transactions'){
+      html+='<div class="card" style="margin-top:16px"><div class="card-title">&#9888;&#65039; Declined Transactions</div>';
+      if(d.declined&&d.declined.length){
+        html+='<div class="alert alert-warning">'+d.declined.length+' declined transaction(s) found</div>';
+        // Fixed column order as specified
+        var decCols=[
+          'TRANSACTIONDTS','STATUSMESSAGE','STATUSCODE','Store',
+          'ACCOUNTNUMBER','AMOUNT','AUTHORIZATIONNUMBER','CARDTYPE',
+          'CREATEDBY','CUSTOMERID','ENTRY_METHOD','EXTERNALTRANSACTIONID',
+          'FIRSTNAME','GLOBALCUSTOMERID','LASTNAME','MERCHANTID',
+          'PAYMENTCLIENTID','PAYMENTMETHODID','PAYMENTPLATFORM','PAYMENTTYPE',
+          'PAYMENT_NETWORK','PINLESS_CONVERTED','PINLESS_RESPONSE_CODE',
+          'RECORDID','TRANSACTIONCOMMAND','TRANSACTIONID'
+        ];
+        html+='<div class="table-wrap"><table><thead><tr>';
+        decCols.forEach(function(c){html+='<th>'+Payment._esc(c)+'</th>'});
+        html+='</tr></thead><tbody>';
+        d.declined.forEach(function(row){
+          html+='<tr>';decCols.forEach(function(c){html+='<td>'+Payment._esc(row[c])+'</td>'});html+='</tr>';
+        });
+        html+='</tbody></table></div>';
+        html+='<div class="diag-section"><h4>&#128161; Declined — Next Steps</h4><p style="font-size:13px">Payment was declined. Inform the store why the payment was declined. <strong>No refund action is required.</strong></p></div>';
+      } else {
+        html+='<div class="alert alert-success">No declined transactions found.</div>';
+      }
+      html+='</div>';
+    }
+    $('payResult').innerHTML=html;
   },
   _esc:function(s){if(s==null)return'—';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 };
