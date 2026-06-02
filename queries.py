@@ -231,4 +231,48 @@ SELECT * FROM (
 ) timeline
 ORDER BY event_time ASC
 """
- 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Add Promotion — Organization / Store lookup
+# ─────────────────────────────────────────────────────────────────────────────
+# Given the user-entered store list, find the organization(s) (company) under
+# which each store belongs.  Only active company/company_store/store rows are
+# considered (end_date / close_date in the future).
+#
+# Returns one row per (store_number, organization) pair so that a store mapped
+# to multiple active organizations is surfaced and not silently merged.
+PROMOTION_FIND_ORGS_FOR_STORES = """
+SELECT DISTINCT
+       s.store_number,
+       c.company_id,
+       c.company_code,
+       c.company_name
+FROM   racadm.company        c
+JOIN   racadm.company_store  cs ON c.company_id = cs.company_id
+JOIN   racadm.store          s  ON cs.store_id  = s.store_id
+WHERE  c.end_date    > CURRENT_DATE
+  AND  cs.end_date   > CURRENT_DATE
+  AND  s.close_date  > CURRENT_DATE
+  AND  s.store_number = ANY(%(store_numbers)s)
+ORDER  BY c.company_name, s.store_number
+"""
+
+# Given a list of organization (company) ids, return every active store under
+# each.  Used to compute which stores belonging to those organizations are NOT
+# in the user's input list — those become the "excluded" stores shown in the UI.
+PROMOTION_ORG_ALL_STORES = """
+SELECT DISTINCT
+       s.store_number,
+       c.company_id,
+       c.company_code,
+       c.company_name
+FROM   racadm.company        c
+JOIN   racadm.company_store  cs ON c.company_id = cs.company_id
+JOIN   racadm.store          s  ON cs.store_id  = s.store_id
+WHERE  c.end_date    > CURRENT_DATE
+  AND  cs.end_date   > CURRENT_DATE
+  AND  s.close_date  > CURRENT_DATE
+  AND  c.company_id = ANY(%(company_ids)s)
+ORDER  BY c.company_name, s.store_number
+"""

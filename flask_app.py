@@ -1038,6 +1038,411 @@ def api_payment_lookup():
     return jsonify(json.loads(json.dumps(result, default=_serialize)))
 
 
+# ── Add Promotion (build payload + show excluded stores per organization) ───
+
+@app.route("/api/promotion/build-payload", methods=["POST"])
+def api_promotion_build_payload():
+    """
+    Build the Add-Promotion creation payload from a user-supplied store list.
+
+    Produces ONE unified payload where:
+      assignStores.companyCode    = [<code for org1>, <code for org2>, ...]
+      assignStores.hierarchyType  = "STORE"
+      assignStores.hierarchyValue = [all included stores across all orgs, sorted]
+
+    Also returns per-organization breakdown so the UI can show which stores were
+    excluded from each organization.
+    """
+    from queries import PROMOTION_FIND_ORGS_FOR_STORES, PROMOTION_ORG_ALL_STORES
+
+    data = request.json or {}
+
+    # ── Promotion metadata fields ──────────────────────────────────────────
+    raw_stores        = data.get("store_numbers", "")
+    promo_group       = (data.get("promoGroup")       or "").strip()
+    promo_type        = (data.get("promoType")        or "").strip()
+    promo_name        = (data.get("promoName")        or "").strip()
+    promo_code        = (data.get("promoCode")        or "").strip()
+    start_date        = (data.get("startDate")        or "").strip()
+    end_date          = (data.get("endDate")          or "").strip()
+    promo_details     = data.get("promoDetails")   if isinstance(data.get("promoDetails"),  list) else []
+    promo_reason      = (data.get("promoReason")      or "").strip()
+    promo_desc        = (data.get("promoDesc")        or "").strip()
+    promo_details_txt = (data.get("promoDetailsText") or "").strip()
+    promo_enabled     = data.get("promoEnabled")   if isinstance(data.get("promoEnabled"),  dict) else {}
+    hierarchy_type    = (data.get("hierarchyType")    or "STORE").strip() or "STORE"
+    code_overrides    = data.get("company_code_overrides") or {}  # {company_id(str): code(str)}
+
+    # ── Validation ──────────────────────────────────────────────────────────
+    if not end_date:
+        return jsonify({"error": "End Date is required (YYYY-MM-DD)."}), 400
+
+    # ── Parse + de-dup store numbers ────────────────────────────────────────
+    if isinstance(raw_stores, list):
+        store_numbers = [str(s).strip() for s in raw_stores if str(s).strip()]
+    else:
+        store_numbers = [s.strip() for s in re.split(r"[\s,;]+", str(raw_stores)) if s.strip()]
+    seen = set()
+    store_numbers = [s for s in store_numbers if not (s in seen or seen.add(s))]
+
+    if not store_numbers:
+        return jsonify({"error": "Please provide at least one store number."}), 400
+
+    # ── Connect to RAC DB ───────────────────────────────────────────────────
+    try:
+        rac_conn, prc_conn = get_connections()
+        prc_conn.close()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Connection error: {e}"}), 503
+
+    try:
+        # 1) Find which organization(s) each store belongs to
+        mapping_rows = execute_query(
+            rac_conn,
+            PROMOTION_FIND_ORGS_FOR_STORES,
+            {"store_numbers": store_numbers},
+        )
+
+        orgs = {}          # company_id(str) -> {company_id, company_code, company_name, included_stores:set}
+        found_stores = set()
+        for row in mapping_rows:
+            cid   = str(row["company_id"])
+            cname = row["company_name"]
+            ccode = str(row["company_code"] or "")
+            snum  = row["store_number"]
+            found_stores.add(snum)
+            org = orgs.setdefault(cid, {
+                "company_id":      cid,
+                "company_code":    ccode,
+                "company_name":    cname,
+                "included_stores": set(),
+            })
+            org["included_stores"].add(snum)
+
+        unknown_stores = sorted([s for s in store_numbers if s not in found_stores])
+
+        # 2) For each org, pull all active stores → compute excluded set
+        if orgs:
+            company_ids_param = [
+                int(cid) if str(cid).isdigit() else cid for cid in orgs.keys()
+            ]
+            all_rows = execute_query(
+                rac_conn,
+                PROMOTION_ORG_ALL_STORES,
+                {"company_ids": company_ids_param},
+            )
+            org_all_stores = {}
+            for row in all_rows:
+                cid = str(row["company_id"])
+                org_all_stores.setdefault(cid, set()).add(row["store_number"])
+            for cid, org in orgs.items():
+                all_set      = org_all_stores.get(cid, set())
+                included_set = org["included_stores"]
+                org["excluded_stores"]  = sorted(all_set - included_set)
+                org["total_org_stores"] = len(all_set)
+    except Exception as e:
+        return jsonify({"error": f"Query failed: {e}",
+                        "traceback": traceback.format_exc()}), 500
+    finally:
+        rac_conn.close()
+
+    # ── Build per-org summaries + unified payload ───────────────────────────
+    organizations = []
+    all_company_codes   = []   # combined across orgs
+    all_included_stores = set()
+
+    # Sort orgs by name for deterministic output
+    sorted_orgs = sorted(orgs.items(), key=lambda kv: (kv[1]["company_name"] or "").lower())
+
+    for cid, org in sorted_orgs:
+        included_sorted = sorted(org["included_stores"])
+        db_code         = org.get("company_code", "")
+        company_code    = str(code_overrides.get(cid, db_code or cid))  # override > DB > company_id
+
+        all_company_codes.append(company_code)
+        all_included_stores.update(included_sorted)
+
+        organizations.append({
+            "company_id":       cid,
+            "company_name":     org["company_name"],
+            "company_code":     company_code,
+            "included_stores":  included_sorted,
+            "excluded_stores":  org.get("excluded_stores", []),
+            "total_org_stores": org.get("total_org_stores", 0),
+        })
+
+    # One unified payload matching the full creation structure
+    unified_payload = {
+        "promoGroup":       promo_group,
+        "promoType":        promo_type,
+        "promoName":        promo_name,
+        "promoCode":        promo_code,
+        "startDate":        start_date,
+        "endDate":          end_date,
+        "promoDetails":     promo_details,
+        "promoReason":      promo_reason,
+        "promoDesc":        promo_desc,
+        "promoDetailsText": promo_details_txt,
+        "promoEnabled":     promo_enabled,
+        "assignStores": {
+            "companyCode":    all_company_codes,
+            "hierarchyType":  hierarchy_type,
+            "hierarchyValue": sorted(all_included_stores),
+        },
+    }
+
+    return jsonify({
+        "input_count":    len(store_numbers),
+        "matched_count":  len(store_numbers) - len(unknown_stores),
+        "unknown_stores": unknown_stores,
+        "organizations":  organizations,
+        "unified_payload": unified_payload,
+    })
+
+
+# ── Update Promotion — build both API payloads ───────────────────────────────
+
+@app.route("/api/promotion/update-payload", methods=["POST"])
+def api_promotion_update_payload():
+    """
+    Build the two payloads needed to UPDATE an existing promotion:
+
+      Payload 1 — "Get Stores" request body:
+        { "companyCode": [...], "type": "STORE",
+          "isPromoGroupAndTypeRequired": "N" }
+
+      Payload 2 — Update request body:
+        { "promotionId": "...", "endDate": "...", "promoEnabled": {...},
+          "assignStores": { "companyCode": [...], "hierarchyType": "STORE",
+                            "hierarchyValue": [...] } }
+
+    Also returns per-organization breakdown (included / excluded stores).
+    """
+    from queries import PROMOTION_FIND_ORGS_FOR_STORES, PROMOTION_ORG_ALL_STORES
+
+    data = request.json or {}
+
+    raw_stores     = data.get("store_numbers", "")
+    promotion_id   = (data.get("promotionId")  or "").strip()
+    end_date       = (data.get("endDate")       or "").strip()
+    promo_enabled  = data.get("promoEnabled") if isinstance(data.get("promoEnabled"), dict) else {}
+    hierarchy_type = "STORE"
+    code_overrides = data.get("company_code_overrides") or {}
+
+    if not end_date:
+        return jsonify({"error": "End Date is required (YYYY-MM-DD)."}), 400
+    if not promotion_id:
+        return jsonify({"error": "Promotion ID is required."}), 400
+
+    # Parse + de-dup store numbers
+    if isinstance(raw_stores, list):
+        store_numbers = [str(s).strip() for s in raw_stores if str(s).strip()]
+    else:
+        store_numbers = [s.strip() for s in re.split(r"[\s,;]+", str(raw_stores)) if s.strip()]
+    seen = set()
+    store_numbers = [s for s in store_numbers if not (s in seen or seen.add(s))]
+
+    if not store_numbers:
+        return jsonify({"error": "Please provide at least one store number."}), 400
+
+    # Connect
+    try:
+        rac_conn, prc_conn = get_connections()
+        prc_conn.close()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Connection error: {e}"}), 503
+
+    try:
+        mapping_rows = execute_query(
+            rac_conn, PROMOTION_FIND_ORGS_FOR_STORES,
+            {"store_numbers": store_numbers},
+        )
+        orgs = {}
+        found_stores = set()
+        for row in mapping_rows:
+            cid   = str(row["company_id"])
+            cname = row["company_name"]
+            ccode = str(row["company_code"] or "")
+            snum  = row["store_number"]
+            found_stores.add(snum)
+            org = orgs.setdefault(cid, {
+                "company_id":      cid,
+                "company_code":    ccode,
+                "company_name":    cname,
+                "included_stores": set(),
+            })
+            org["included_stores"].add(snum)
+
+        unknown_stores = sorted([s for s in store_numbers if s not in found_stores])
+
+        if orgs:
+            company_ids_param = [
+                int(cid) if str(cid).isdigit() else cid for cid in orgs.keys()
+            ]
+            all_rows = execute_query(
+                rac_conn, PROMOTION_ORG_ALL_STORES,
+                {"company_ids": company_ids_param},
+            )
+            org_all_stores = {}
+            for row in all_rows:
+                cid = str(row["company_id"])
+                org_all_stores.setdefault(cid, set()).add(row["store_number"])
+            for cid, org in orgs.items():
+                all_set = org_all_stores.get(cid, set())
+                org["excluded_stores"]  = sorted(all_set - org["included_stores"])
+                org["total_org_stores"] = len(all_set)
+    except Exception as e:
+        return jsonify({"error": f"Query failed: {e}",
+                        "traceback": traceback.format_exc()}), 500
+    finally:
+        rac_conn.close()
+
+    organizations    = []
+    all_company_codes    = []
+    all_included_stores  = set()
+
+    sorted_orgs = sorted(orgs.items(), key=lambda kv: (kv[1]["company_name"] or "").lower())
+    for cid, org in sorted_orgs:
+        included_sorted = sorted(org["included_stores"])
+        db_code         = org.get("company_code", "")
+        company_code    = str(code_overrides.get(cid, db_code or cid))  # override > DB > company_id
+        all_company_codes.append(company_code)
+        all_included_stores.update(included_sorted)
+        organizations.append({
+            "company_id":       cid,
+            "company_name":     org["company_name"],
+            "company_code":     company_code,
+            "included_stores":  included_sorted,
+            "excluded_stores":  org.get("excluded_stores", []),
+            "total_org_stores": org.get("total_org_stores", 0),
+        })
+
+    # Payload 1 — Get Stores (used before the update call)
+    get_stores_payload = {
+        "companyCode":               all_company_codes,
+        "type":                      hierarchy_type,
+        "isPromoGroupAndTypeRequired": "N",
+    }
+
+    # Payload 2 — Update Promotion
+    update_payload = {
+        "promotionId":  promotion_id,
+        "endDate":      end_date,
+        "promoEnabled": promo_enabled,
+        "assignStores": {
+            "companyCode":    all_company_codes,
+            "hierarchyType":  hierarchy_type,
+            "hierarchyValue": sorted(all_included_stores),
+        },
+    }
+
+    return jsonify({
+        "input_count":       len(store_numbers),
+        "matched_count":     len(store_numbers) - len(unknown_stores),
+        "unknown_stores":    unknown_stores,
+        "organizations":     organizations,
+        "get_stores_payload": get_stores_payload,
+        "update_payload":    update_payload,
+    })
+
+
+# ── Excluded Stores Lookup — no payload, just org / exclusion breakdown ───────
+
+@app.route("/api/promotion/excluded-stores", methods=["POST"])
+def api_promotion_excluded_stores():
+    """
+    Given only a list of store numbers, return per-organization breakdown:
+      - which of the input stores belong to each org (included)
+      - which OTHER active stores in each org are NOT in the input list (excluded)
+    No promotion metadata required — pure lookup only.
+    """
+    from queries import PROMOTION_FIND_ORGS_FOR_STORES, PROMOTION_ORG_ALL_STORES
+
+    data = request.json or {}
+    raw_stores = data.get("store_numbers", "")
+
+    if isinstance(raw_stores, list):
+        store_numbers = [str(s).strip() for s in raw_stores if str(s).strip()]
+    else:
+        store_numbers = [s.strip() for s in re.split(r"[\s,;]+", str(raw_stores)) if s.strip()]
+    seen = set()
+    store_numbers = [s for s in store_numbers if not (s in seen or seen.add(s))]
+
+    if not store_numbers:
+        return jsonify({"error": "Please provide at least one store number."}), 400
+
+    try:
+        rac_conn, prc_conn = get_connections()
+        prc_conn.close()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Connection error: {e}"}), 503
+
+    try:
+        mapping_rows = execute_query(
+            rac_conn, PROMOTION_FIND_ORGS_FOR_STORES,
+            {"store_numbers": store_numbers},
+        )
+        orgs = {}
+        found_stores = set()
+        for row in mapping_rows:
+            cid   = str(row["company_id"])
+            snum  = row["store_number"]
+            found_stores.add(snum)
+            org = orgs.setdefault(cid, {
+                "company_id":      cid,
+                "company_name":    row["company_name"],
+                "included_stores": set(),
+            })
+            org["included_stores"].add(snum)
+
+        unknown_stores = sorted([s for s in store_numbers if s not in found_stores])
+
+        if orgs:
+            company_ids_param = [
+                int(cid) if str(cid).isdigit() else cid for cid in orgs.keys()
+            ]
+            all_rows = execute_query(
+                rac_conn, PROMOTION_ORG_ALL_STORES,
+                {"company_ids": company_ids_param},
+            )
+            org_all_stores = {}
+            for row in all_rows:
+                cid = str(row["company_id"])
+                org_all_stores.setdefault(cid, set()).add(row["store_number"])
+            for cid, org in orgs.items():
+                all_set = org_all_stores.get(cid, set())
+                org["excluded_stores"]  = sorted(all_set - org["included_stores"])
+                org["total_org_stores"] = len(all_set)
+    except Exception as e:
+        return jsonify({"error": f"Query failed: {e}",
+                        "traceback": traceback.format_exc()}), 500
+    finally:
+        rac_conn.close()
+
+    organizations = []
+    for cid, org in sorted(orgs.items(), key=lambda kv: (kv[1]["company_name"] or "").lower()):
+        organizations.append({
+            "company_id":       cid,
+            "company_name":     org["company_name"],
+            "included_stores":  sorted(org["included_stores"]),
+            "excluded_stores":  org.get("excluded_stores", []),
+            "total_org_stores": org.get("total_org_stores", 0),
+        })
+
+    return jsonify({
+        "input_count":   len(store_numbers),
+        "matched_count": len(store_numbers) - len(unknown_stores),
+        "unknown_stores": unknown_stores,
+        "organizations": organizations,
+    })
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=8501, use_reloader=False)
 
@@ -1974,6 +2379,3 @@ def api_payment_lookup():
     }
     return jsonify(json.loads(json.dumps(result, default=_serialize)))
 
-
-if __name__ == "__main__":
-    app.run(debug=True, port=8501, use_reloader=False)
