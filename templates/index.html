@@ -84,6 +84,10 @@ tr:hover td{background:var(--accent-light)}
   .mobile-btn{display:flex!important}
   .form-row{grid-template-columns:1fr}
 }
+/* ── Env radio buttons ── */
+.env-radio-label{border:1px solid var(--border);transition:border .15s,background .15s}
+.env-radio-label.env-active{border:2px solid var(--accent)!important;background:var(--accent-light)}
+.env-radio-label:not(.env-active):not([title]){border:1px solid var(--border);background:transparent}
 </style>
 </head>
 <body>
@@ -224,14 +228,14 @@ tr:hover td{background:var(--accent-light)}
         <div class="form-row" style="align-items:flex-end">
           <div class="form-group" style="flex:0 0 auto">
             <label>Environment</label>
-            <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
-              <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;border:2px solid var(--accent);font-size:13px;background:var(--accent-light)">
-                <input type="radio" name="sndEnv" value="dev" checked style="accent-color:var(--accent)"> Dev
+            <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap" id="sndEnvGroup">
+              <label class="env-radio-label" data-env="dev" style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;font-size:13px">
+                <input type="radio" name="sndEnv" value="dev" checked style="accent-color:var(--accent)" onchange="EnvRadio.onChange()"> Dev
               </label>
-              <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;border:1px solid var(--border);font-size:13px">
-                <input type="radio" name="sndEnv" value="qa" style="accent-color:var(--accent)"> QA
+              <label class="env-radio-label" data-env="qa" style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;font-size:13px">
+                <input type="radio" name="sndEnv" value="qa" style="accent-color:var(--accent)" onchange="EnvRadio.onChange()"> QA
               </label>
-              <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;border:1px solid var(--border);font-size:13px;opacity:0.45" title="Prod not yet configured">
+              <label class="env-radio-label" data-env="prod" style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;font-size:13px;opacity:0.45" title="Prod not yet configured">
                 <input type="radio" name="sndEnv" value="prod" disabled style="accent-color:var(--accent)"> Prod <span style="font-size:10px;color:var(--text-sec)">(soon)</span>
               </label>
             </div>
@@ -250,6 +254,14 @@ tr:hover td{background:var(--accent-light)}
             <label>Access Token <span style="font-size:10px;color:var(--text-sec);font-weight:400">(value of accesstoken header)</span></label>
             <textarea id="sndAccessToken" rows="3" placeholder="Paste access token here…" style="font-family:monospace;font-size:11px;word-break:break-all;resize:vertical"></textarea>
           </div>
+        </div>
+        <!-- Generate Token via SSO -->
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" id="btnGenerateToken" onclick="TokenGen.start()" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;font-weight:600">
+            &#128273; Generate Token via SSO
+          </button>
+          <button class="btn btn-danger btn-sm" id="btnCancelToken" onclick="TokenGen.cancel()" style="display:none">&#10006; Cancel</button>
+          <span id="tokenGenStatus" style="font-size:12px;color:var(--text-sec)"></span>
         </div>
       </div>
 
@@ -1047,6 +1059,136 @@ var SendPromo = {
     toast('Downloaded','success');
   }
 };
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TokenGen — Generate Auth Tokens via SSO (Selenium browser)
+   Flow: start() → poll status → extract() → populate fields
+   ════════════════════════════════════════════════════════════════════════════ */
+var TokenGen = {
+  _pollTimer: null,
+
+  _getEnv: function(){
+    var radios=document.querySelectorAll('input[name="sndEnv"]');
+    for(var i=0;i<radios.length;i++){if(radios[i].checked)return radios[i].value;}
+    return 'dev';
+  },
+
+  start: async function(){
+    var env = TokenGen._getEnv();
+    var btn = $('btnGenerateToken');
+    var statusEl = $('tokenGenStatus');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Launching…';
+    statusEl.textContent = '';
+
+    var r = await api('POST', '/api/token/start', { env: env, browser: 'edge' });
+    if (!r.ok) {
+      btn.disabled = false;
+      btn.innerHTML = '&#128273; Generate Token via SSO';
+      statusEl.textContent = r.data.error || 'Failed to start';
+      statusEl.style.color = 'var(--error)';
+      return;
+    }
+
+    // Show cancel button and status
+    $('btnCancelToken').style.display = '';
+    btn.innerHTML = '&#128273; Extract Tokens';
+    btn.disabled = false;
+    btn.onclick = TokenGen.extract;
+    statusEl.innerHTML = '&#128994; Browser open — complete SSO login, then click <strong>Extract Tokens</strong>';
+    statusEl.style.color = 'var(--accent)';
+  },
+
+  extract: async function(){
+    var btn = $('btnGenerateToken');
+    var statusEl = $('tokenGenStatus');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Extracting…';
+    statusEl.textContent = 'Reading tokens from browser…';
+    statusEl.style.color = 'var(--text-sec)';
+
+    var r = await api('POST', '/api/token/extract');
+    if (!r.ok) {
+      btn.disabled = false;
+      btn.innerHTML = '&#128273; Extract Tokens';
+      statusEl.textContent = r.data.error || 'Extraction failed — try again after login completes';
+      statusEl.style.color = 'var(--error)';
+      return;
+    }
+
+    // Success — populate fields
+    var tokens = r.data.tokens;
+    if (tokens) {
+      if (tokens.idToken) $('sndAuthToken').value = tokens.idToken;
+      if (tokens.accessToken) $('sndAccessToken').value = tokens.accessToken;
+      if (tokens.storeNumber) $('sndStoreHdr').value = tokens.storeNumber;
+    }
+
+    // Reset UI
+    TokenGen._resetUI();
+    statusEl.innerHTML = '&#9989; Tokens extracted and populated successfully!';
+    statusEl.style.color = 'var(--success)';
+    toast('Tokens extracted from SSO', 'success');
+
+    // Clear success message after a few seconds
+    setTimeout(function(){ statusEl.textContent = ''; }, 5000);
+  },
+
+  cancel: async function(){
+    await api('POST', '/api/token/cancel');
+    TokenGen._resetUI();
+    $('tokenGenStatus').textContent = 'Session cancelled.';
+    $('tokenGenStatus').style.color = 'var(--text-sec)';
+    setTimeout(function(){ $('tokenGenStatus').textContent = ''; }, 3000);
+  },
+
+  _resetUI: function(){
+    var btn = $('btnGenerateToken');
+    btn.disabled = false;
+    btn.innerHTML = '&#128273; Generate Token via SSO';
+    btn.onclick = TokenGen.start;
+    $('btnCancelToken').style.display = 'none';
+  }
+};
+/* ════════════════════════════════════════════════════════════════════════════
+   EnvRadio — keeps environment radio pill styles in sync and flushes tokens
+   ════════════════════════════════════════════════════════════════════════════ */
+var EnvRadio = {
+  init: function() {
+    // Set initial active state based on the checked radio (dev is default)
+    EnvRadio._update();
+  },
+
+  onChange: function() {
+    EnvRadio._update();
+    // Flush tokens whenever environment changes
+    var authEl = $('sndAuthToken');
+    var accEl  = $('sndAccessToken');
+    if (authEl) authEl.value = '';
+    if (accEl)  accEl.value  = '';
+    // Also reset the TokenGen UI state cleanly
+    TokenGen._resetUI();
+    var statusEl = $('tokenGenStatus');
+    if (statusEl) { statusEl.textContent = ''; }
+    toast('Environment changed — tokens cleared', 'info');
+  },
+
+  _update: function() {
+    var labels = document.querySelectorAll('.env-radio-label');
+    labels.forEach(function(lbl) {
+      var radio = lbl.querySelector('input[type=radio]');
+      if (!radio || radio.disabled) return;
+      if (radio.checked) {
+        lbl.classList.add('env-active');
+      } else {
+        lbl.classList.remove('env-active');
+      }
+    });
+  }
+};
+
+// Initialise on DOM ready
+document.addEventListener('DOMContentLoaded', function() { EnvRadio.init(); });
 </script>
 </body>
 </html>

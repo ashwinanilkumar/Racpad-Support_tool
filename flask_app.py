@@ -1784,6 +1784,50 @@ def api_promotion_proxy_retry():
     except Exception as e:
         return jsonify({"error": f"API call failed: {e}"}), 502
 
+
+# ── Token Extraction via Selenium (SSO) ───────────────────────────────────────
+
+import token_extractor
+
+@app.route("/api/token/start", methods=["POST"])
+def api_token_start():
+    """Launch browser for SSO login and token extraction.
+    Always cancels any existing session first so the button always works.
+    """
+    data = request.get_json(force=True) or {}
+    env = data.get("env", "dev")
+    browser = data.get("browser", "edge")
+    if env not in ("dev", "qa", "prod"):
+        return jsonify({"error": f"Invalid environment: {env}"}), 400
+    # Always kill any previous browser session before starting a new one
+    token_extractor.cancel_session()
+    result = token_extractor.start_extraction(env=env, browser=browser)
+    if "error" in result:
+        return jsonify(result), 409
+    return jsonify(result)
+
+
+@app.route("/api/token/extract", methods=["POST"])
+def api_token_extract():
+    """Attempt to extract tokens from the open browser session."""
+    result = token_extractor.extract_now()
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.route("/api/token/status", methods=["GET"])
+def api_token_status():
+    """Check the current status of the token extraction session."""
+    return jsonify(token_extractor.get_status())
+
+
+@app.route("/api/token/cancel", methods=["POST"])
+def api_token_cancel():
+    """Cancel the current browser session."""
+    return jsonify(token_extractor.cancel_session())
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=8501, use_reloader=False)
 

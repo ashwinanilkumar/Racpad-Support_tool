@@ -6,4 +6,6 @@ psycopg2-binary
 mysql-connector-python
 pymysql
 requests
+selenium
+webdriver-manager
 
