@@ -10,6 +10,7 @@ import re
 import socket
 import json
 import traceback
+import requests as http_requests
 
 import auth
 from db import get_connections, execute_query, get_config_connection, get_payment_connection, execute_mysql_query
@@ -1442,6 +1443,346 @@ def api_promotion_excluded_stores():
         "organizations": organizations,
     })
 
+
+
+
+# ── Promotion Proxy — Build payload then forward to real API ──────────────────
+
+_PROMO_URLS = {
+    "dev":  "https://dev-pricing-racpad.rentacenter.com/api/schedule",
+    "qa":   "https://qa-pricing-racpad.rentacenter.com/api/schedule",
+    "prod": "",
+}
+_PROMO_ORIGINS = {
+    "dev":  "https://dev-menu-racpad.rentacenter.com",
+    "qa":   "https://qa-menu-racpad.rentacenter.com",
+    "prod": "",
+}
+
+
+def _promotion_db_lookup(store_numbers):
+    """Connect to DB, look up orgs for stores, compute excluded sets.
+    Returns (orgs_dict, unknown_stores).
+    orgs_dict: {company_id_str: {company_id, company_code, company_name,
+                                  included_stores(set), excluded_stores(list),
+                                  total_org_stores}}
+    """
+    from queries import PROMOTION_FIND_ORGS_FOR_STORES, PROMOTION_ORG_ALL_STORES
+    try:
+        rac_conn, prc_conn = get_connections()
+        prc_conn.close()
+    except RuntimeError as e:
+        raise RuntimeError(str(e))
+    except Exception as e:
+        raise RuntimeError(f"Connection error: {e}")
+
+    try:
+        mapping_rows = execute_query(
+            rac_conn, PROMOTION_FIND_ORGS_FOR_STORES, {"store_numbers": store_numbers}
+        )
+        orgs = {}
+        found_stores = set()
+        for row in mapping_rows:
+            cid   = str(row["company_id"])
+            cname = row["company_name"]
+            ccode = str(row["company_code"] or "")
+            snum  = row["store_number"]
+            found_stores.add(snum)
+            org = orgs.setdefault(cid, {
+                "company_id": cid, "company_code": ccode,
+                "company_name": cname, "included_stores": set(),
+            })
+            org["included_stores"].add(snum)
+
+        unknown_stores = sorted([s for s in store_numbers if s not in found_stores])
+
+        if orgs:
+            company_ids_param = [
+                int(cid) if str(cid).isdigit() else cid for cid in orgs.keys()
+            ]
+            all_rows = execute_query(
+                rac_conn, PROMOTION_ORG_ALL_STORES, {"company_ids": company_ids_param}
+            )
+            org_all_stores = {}
+            for row in all_rows:
+                cid = str(row["company_id"])
+                org_all_stores.setdefault(cid, set()).add(row["store_number"])
+            for cid, org in orgs.items():
+                all_set = org_all_stores.get(cid, set())
+                org["excluded_stores"]  = sorted(all_set - org["included_stores"])
+                org["total_org_stores"] = len(all_set)
+    finally:
+        rac_conn.close()
+
+    return orgs, unknown_stores
+
+
+@app.route("/api/promotion/proxy-build", methods=["POST"])
+def api_promotion_proxy_build():
+    """Build promotion payload (Add or Update) for user review — does NOT call the real API."""
+    data   = request.get_json(force=True) or {}
+    action = data.get("action", "add")
+
+    # Parse store numbers
+    raw_stores = data.get("store_numbers", "") or ""
+    if isinstance(raw_stores, list):
+        store_numbers = [str(s).strip() for s in raw_stores if str(s).strip()]
+    else:
+        store_numbers = [s.strip() for s in re.split(r"[\s,;]+", str(raw_stores)) if s.strip()]
+    seen = set()
+    store_numbers = [s for s in store_numbers if not (s in seen or seen.add(s))]
+    if not store_numbers:
+        return jsonify({"error": "Please provide at least one store number."}), 400
+
+    # DB lookup
+    try:
+        orgs, unknown_stores = _promotion_db_lookup(store_numbers)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"DB error: {e}", "traceback": traceback.format_exc()}), 500
+
+    code_overrides      = data.get("company_code_overrides") or {}
+    sorted_orgs         = sorted(orgs.items(), key=lambda kv: (kv[1]["company_name"] or "").lower())
+    all_company_codes   = []
+    all_included_stores = set()
+    organizations       = []
+    for cid, org in sorted_orgs:
+        included_sorted = sorted(org["included_stores"])
+        db_code         = org.get("company_code", "")
+        company_code    = str(code_overrides.get(cid, db_code or cid))
+        all_company_codes.append(company_code)
+        all_included_stores.update(included_sorted)
+        organizations.append({
+            "company_id":       cid,
+            "company_name":     org["company_name"],
+            "company_code":     company_code,
+            "included_stores":  included_sorted,
+            "excluded_stores":  org.get("excluded_stores", []),
+            "total_org_stores": org.get("total_org_stores", 0),
+        })
+
+    build_summary = {
+        "input_count":    len(store_numbers),
+        "matched_count":  len(store_numbers) - len(unknown_stores),
+        "unknown_stores": unknown_stores,
+        "organizations":  organizations,
+    }
+
+    # Build payload for review
+    if action == "add":
+        promo_config_raw = data.get("promoConfig") or {}
+        # Only include promoConfig if at least one value is non-empty
+        promo_config = {k: v for k, v in promo_config_raw.items() if str(v or "").strip()}
+        promo_enabled_raw = data.get("promoEnabled") or {}
+        payload = {
+            "promoGroup":       data.get("promoGroup", ""),
+            "promoType":        data.get("promoType", ""),
+            "promoName":        data.get("promoName", ""),
+            "promoCode":        data.get("promoCode", ""),
+            "startDate":        data.get("startDate", ""),
+            "endDate":          data.get("endDate", ""),
+            "promoDetails":     data.get("promoDetails") or [],
+            "promoReason":      data.get("promoReason", ""),
+            "promoDesc":        data.get("promoDesc", ""),
+            "promoDetailsText": data.get("promoDetailsText", ""),
+            "promoEnabled":     promo_enabled_raw,
+            "assignStores": {
+                "companyCode":    all_company_codes,
+                "hierarchyType":  data.get("hierarchyType", "STORE"),
+                "hierarchyValue": sorted(all_included_stores),
+            },
+        }
+        if promo_config:
+            payload["promoConfig"] = promo_config
+    else:  # update
+        promo_enabled_raw = data.get("promoEnabled") or {}
+        payload = {
+            "promotionId":  data.get("promotionId", ""),
+            "endDate":      data.get("endDate", ""),
+            "promoEnabled": promo_enabled_raw,
+            "assignStores": {
+                "companyCode":    all_company_codes,
+                "hierarchyType":  data.get("hierarchyType", "STORE"),
+                "hierarchyValue": sorted(all_included_stores),
+            },
+        }
+
+    return jsonify({"build_summary": build_summary, "payload": payload})
+
+
+@app.route("/api/promotion/proxy-send", methods=["POST"])
+def api_promotion_proxy_send():
+    """Build promotion payload (Add or Update) then forward to real API."""
+    data             = request.get_json(force=True) or {}
+    action           = data.get("action", "add")
+    env              = data.get("env", "dev")
+    auth_token       = data.get("auth_token", "")
+    access_token     = data.get("access_token", "")
+    store_number_hdr = data.get("store_number_header", "02202")
+
+    api_url = _PROMO_URLS.get(env, "")
+    origin  = _PROMO_ORIGINS.get(env, "")
+    if not api_url:
+        return jsonify({
+            "error": f"No URL configured for environment '{env}'. Prod is not yet supported."
+        }), 400
+
+    # Parse store numbers
+    raw_stores = data.get("store_numbers", "") or ""
+    if isinstance(raw_stores, list):
+        store_numbers = [str(s).strip() for s in raw_stores if str(s).strip()]
+    else:
+        store_numbers = [s.strip() for s in re.split(r"[\s,;]+", str(raw_stores)) if s.strip()]
+    seen = set()
+    store_numbers = [s for s in store_numbers if not (s in seen or seen.add(s))]
+    if not store_numbers:
+        return jsonify({"error": "Please provide at least one store number."}), 400
+
+    # DB lookup
+    try:
+        orgs, unknown_stores = _promotion_db_lookup(store_numbers)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"DB error: {e}", "traceback": traceback.format_exc()}), 500
+
+    code_overrides      = data.get("company_code_overrides") or {}
+    sorted_orgs         = sorted(orgs.items(), key=lambda kv: (kv[1]["company_name"] or "").lower())
+    all_company_codes   = []
+    all_included_stores = set()
+    organizations       = []
+    for cid, org in sorted_orgs:
+        included_sorted = sorted(org["included_stores"])
+        db_code         = org.get("company_code", "")
+        company_code    = str(code_overrides.get(cid, db_code or cid))
+        all_company_codes.append(company_code)
+        all_included_stores.update(included_sorted)
+        organizations.append({
+            "company_id":       cid,
+            "company_name":     org["company_name"],
+            "company_code":     company_code,
+            "included_stores":  included_sorted,
+            "excluded_stores":  org.get("excluded_stores", []),
+            "total_org_stores": org.get("total_org_stores", 0),
+        })
+
+    build_summary = {
+        "input_count":   len(store_numbers),
+        "matched_count": len(store_numbers) - len(unknown_stores),
+        "unknown_stores": unknown_stores,
+        "organizations": organizations,
+    }
+
+    # Build payload
+    if action == "add":
+        promo_config_raw = data.get("promoConfig") or {}
+        promo_config = {k: v for k, v in promo_config_raw.items() if str(v or "").strip()}
+        payload = {
+            "promoGroup":       data.get("promoGroup", ""),
+            "promoType":        data.get("promoType", ""),
+            "promoName":        data.get("promoName", ""),
+            "promoCode":        data.get("promoCode", ""),
+            "startDate":        data.get("startDate", ""),
+            "endDate":          data.get("endDate", ""),
+            "promoDetails":     data.get("promoDetails") or [],
+            "promoReason":      data.get("promoReason", ""),
+            "promoDesc":        data.get("promoDesc", ""),
+            "promoDetailsText": data.get("promoDetailsText", ""),
+            "promoEnabled":     data.get("promoEnabled") or {},
+            "assignStores": {
+                "companyCode":    all_company_codes,
+                "hierarchyType":  data.get("hierarchyType", "STORE"),
+                "hierarchyValue": sorted(all_included_stores),
+            },
+        }
+        if promo_config:
+            payload["promoConfig"] = promo_config
+    else:  # update
+        payload = {
+            "promotionId": data.get("promotionId", ""),
+            "endDate":     data.get("endDate", ""),
+            "promoEnabled": data.get("promoEnabled") or {},
+            "assignStores": {
+                "companyCode":    all_company_codes,
+                "hierarchyType":  data.get("hierarchyType", "STORE"),
+                "hierarchyValue": sorted(all_included_stores),
+            },
+        }
+
+    # Forward to real API
+    headers = {
+        "Accept":          "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Authorization":   f"Bearer {auth_token}",
+        "Content-Type":    "application/json; charset=UTF-8",
+        "Origin":          origin,
+        "Referer":         f"{origin}/",
+        "accesstoken":     access_token,
+        "storenumber":     store_number_hdr,
+        "Connection":      "keep-alive",
+    }
+    try:
+        api_resp = http_requests.post(api_url, json=payload, headers=headers, timeout=30)
+        try:
+            resp_json = api_resp.json()
+        except Exception:
+            resp_json = {"raw": api_resp.text}
+        return jsonify({
+            "build_summary": build_summary,
+            "payload_sent":  payload,
+            "api_status":    api_resp.status_code,
+            "api_response":  resp_json,
+            "success":       api_resp.ok,
+        })
+    except http_requests.exceptions.SSLError as e:
+        return jsonify({"error": f"SSL error: {e}", "payload_sent": payload}), 502
+    except http_requests.exceptions.ConnectionError as e:
+        return jsonify({"error": f"Connection error: {e}. Check VPN/network.", "payload_sent": payload}), 502
+    except Exception as e:
+        return jsonify({"error": f"API call failed: {e}", "payload_sent": payload}), 502
+
+
+@app.route("/api/promotion/proxy-retry", methods=["POST"])
+def api_promotion_proxy_retry():
+    """Forward a manually edited JSON payload directly to the real promotion API."""
+    data             = request.get_json(force=True) or {}
+    env              = data.get("env", "dev")
+    auth_token       = data.get("auth_token", "")
+    access_token     = data.get("access_token", "")
+    store_number_hdr = data.get("store_number_header", "02202")
+    payload          = data.get("payload")
+
+    api_url = _PROMO_URLS.get(env, "")
+    origin  = _PROMO_ORIGINS.get(env, "")
+    if not api_url:
+        return jsonify({"error": f"No URL configured for environment '{env}'."}), 400
+    if not payload:
+        return jsonify({"error": "No payload provided."}), 400
+
+    headers = {
+        "Accept":        "application/json, text/plain, */*",
+        "Authorization": f"Bearer {auth_token}",
+        "Content-Type":  "application/json; charset=UTF-8",
+        "Origin":        origin,
+        "Referer":       f"{origin}/",
+        "accesstoken":   access_token,
+        "storenumber":   store_number_hdr,
+    }
+    try:
+        api_resp = http_requests.post(api_url, json=payload, headers=headers, timeout=30)
+        try:
+            resp_json = api_resp.json()
+        except Exception:
+            resp_json = {"raw": api_resp.text}
+        return jsonify({
+            "payload_sent": payload,
+            "api_status":   api_resp.status_code,
+            "api_response": resp_json,
+            "success":      api_resp.ok,
+        })
+    except Exception as e:
+        return jsonify({"error": f"API call failed: {e}"}), 502
 
 if __name__ == "__main__":
     app.run(debug=True, port=8501, use_reloader=False)

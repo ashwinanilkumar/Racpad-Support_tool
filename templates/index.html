@@ -181,20 +181,16 @@ tr:hover td{background:var(--accent-light)}
     </div>
     <div id="payResult" style="margin-top:16px"></div>
   </div>
-  <!-- ── Promotion (Add / Update) ── -->
+  <!-- ── Promotion Manager ── -->
   <div class="page" id="page-promotion">
     <h1 class="page-title">Promotion Manager</h1>
-    <p class="page-desc">Switch between Add and Update modes. Both modes look up the organization for every store, compute excluded stores, and build the correct API payload(s).</p>
+    <p class="page-desc">Build and send promotion payloads to Dev or QA. Auth fields are optional — fill them in to send directly to the API, or leave blank to just preview the payload.</p>
 
     <!-- Mode tabs -->
     <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content">
-      <button id="tabAdd" onclick="Promotion.setMode('add')"
+      <button id="tabSend" onclick="Promotion.setMode('send')"
         style="padding:10px 28px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--accent);color:#fff;transition:background .15s">
-        &#10133; Add Promotion
-      </button>
-      <button id="tabUpdate" onclick="Promotion.setMode('update')"
-        style="padding:10px 28px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text);border-left:1px solid var(--border);transition:background .15s">
-        &#9998; Update Promotion
+        &#127873; Add / Update Promotion
       </button>
       <button id="tabExcluded" onclick="Promotion.setMode('excluded')"
         style="padding:10px 28px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text);border-left:1px solid var(--border);transition:background .15s">
@@ -202,89 +198,7 @@ tr:hover td{background:var(--accent-light)}
       </button>
     </div>
 
-    <!-- ══════════════ ADD FORM ══════════════ -->
-    <div id="promoAddForm">
-      <div class="card">
-        <div class="card-title">&#127873; Promotion Details</div>
-        <div class="form-row">
-          <div class="form-group"><label>Promo Group</label><input id="prmGroup" placeholder="e.g. GENERAL PROMOTION"/></div>
-          <div class="form-group"><label>Promo Type</label><input id="prmType" placeholder="e.g. PIFEPO"/></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Promo Name</label><input id="prmName" placeholder="e.g. 100 Off TRTO HISENSE"/></div>
-          <div class="form-group"><label>Promo Code</label><input id="prmCode" placeholder="e.g. HISENSE100"/></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Start Date</label><input id="prmStartDate" type="date"/></div>
-          <div class="form-group"><label>End Date</label><input id="prmEndDate" type="date"/></div>
-        </div>
-        <div class="form-group"><label>Promo Reason</label><input id="prmReason" placeholder="e.g. SIMS/ECOM/RACPAD"/></div>
-        <div class="form-group"><label>Promo Desc <span style="font-size:10px;color:var(--text-sec)">(short)</span></label>
-          <textarea id="prmDesc" rows="2" placeholder='e.g. ^"Get $100 Off" offer is valid on a new Hisense agreement…'></textarea></div>
-        <div class="form-group"><label>Promo Details Text <span style="font-size:10px;color:var(--text-sec)">(fine print)</span></label>
-          <textarea id="prmDetailsText" rows="3" placeholder="Full terms and conditions text…"></textarea></div>
-      </div>
-      <div class="card">
-        <div class="card-title">&#9989; Promo Enabled Flags</div>
-        <div class="form-row">
-          <div class="form-group"><label>Customer Order Enabled</label>
-            <select id="prmCustOrder"><option value="Y">Y</option><option value="N">N</option></select></div>
-          <div class="form-group"><label>Ecomm Enabled</label>
-            <select id="prmEcomm"><option value="Y">Y</option><option value="N">N</option></select></div>
-          <div class="form-group"><label>Promo Text Box Enabled</label>
-            <select id="prmTextBox"><option value="Y">Y</option><option value="N">N</option></select></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">&#128196; Promo Details (Key / Value Pairs)</div>
-        <div id="prmDetailsRows">
-          <div class="form-row prmDetailRow" style="align-items:center">
-            <div class="form-group"><label>Promo Key</label><input class="prmKey" placeholder="e.g. TRTOD"/></div>
-            <div class="form-group"><label>Promo Value</label><input class="prmVal" placeholder="e.g. 100"/></div>
-            <div style="padding-top:22px"><button class="btn btn-danger btn-sm" onclick="Promotion.removeDetail(this)">&#10006;</button></div>
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="Promotion.addDetail()">&#43; Add Row</button>
-      </div>
-      <div class="card">
-        <div class="card-title">&#127970; Store Numbers</div>
-        <div class="form-group">
-          <label>Stores to Include <span style="font-size:11px;color:var(--text-sec);font-weight:400">(comma, space or newline separated)</span></label>
-          <textarea id="promoStores" rows="6" placeholder="e.g. 00145&#10;00176&#10;07280"></textarea>
-        </div>
-        <button class="btn btn-primary" onclick="Promotion.build()">&#128270; Look Up Orgs &amp; Build Payload</button>
-      </div>
-    </div>
 
-    <!-- ══════════════ UPDATE FORM ══════════════ -->
-    <div id="promoUpdateForm" style="display:none">
-      <div class="card">
-        <div class="card-title">&#9998; Update Promotion Details</div>
-        <div class="form-row">
-          <div class="form-group"><label>Promotion ID</label><input id="updPromoId" placeholder="e.g. 68643392"/></div>
-          <div class="form-group"><label>End Date</label><input id="updEndDate" type="date"/></div>
-        </div>
-        <p style="font-size:12px;color:var(--text-sec);margin-bottom:8px">
-          <strong>promoEnabled</strong> — leave all fields on <em>—</em> to send an empty <code>{}</code> object (most common for updates), or set Y/N values to include them.
-        </p>
-        <div class="form-row">
-          <div class="form-group"><label>Customer Order Enabled <span style="font-size:10px;color:var(--text-sec)">(blank = omit)</span></label>
-            <select id="updCustOrder"><option value="">— omit —</option><option value="Y">Y</option><option value="N">N</option></select></div>
-          <div class="form-group"><label>Ecomm Enabled <span style="font-size:10px;color:var(--text-sec)">(blank = omit)</span></label>
-            <select id="updEcomm"><option value="">— omit —</option><option value="Y">Y</option><option value="N">N</option></select></div>
-          <div class="form-group"><label>Promo Text Box Enabled <span style="font-size:10px;color:var(--text-sec)">(blank = omit)</span></label>
-            <select id="updTextBox"><option value="">— omit —</option><option value="Y">Y</option><option value="N">N</option></select></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">&#127970; Store Numbers</div>
-        <div class="form-group">
-          <label>Stores to Include <span style="font-size:11px;color:var(--text-sec);font-weight:400">(comma, space or newline separated)</span></label>
-          <textarea id="updStores" rows="6" placeholder="e.g. 00341&#10;01155&#10;01158"></textarea>
-        </div>
-        <button class="btn btn-primary" onclick="Promotion.buildUpdate()">&#128270; Look Up Orgs &amp; Build Update Payloads</button>
-      </div>
-    </div>
 
     <!-- ══════════════ EXCLUDED STORES FORM ══════════════ -->
     <div id="promoExcludedForm" style="display:none">
@@ -299,6 +213,196 @@ tr:hover td{background:var(--accent-light)}
         </div>
         <button class="btn btn-primary" onclick="Promotion.buildExcluded()">&#128683; Find Excluded Stores</button>
       </div>
+    </div>
+
+    <!-- ══════════════ SEND TO API FORM ══════════════ -->
+    <div id="promoSendForm">
+
+      <!-- Environment & Auth -->
+      <div class="card">
+        <div class="card-title">&#127758; Environment &amp; Authentication</div>
+        <div class="form-row" style="align-items:flex-end">
+          <div class="form-group" style="flex:0 0 auto">
+            <label>Environment</label>
+            <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;border:2px solid var(--accent);font-size:13px;background:var(--accent-light)">
+                <input type="radio" name="sndEnv" value="dev" checked style="accent-color:var(--accent)"> Dev
+              </label>
+              <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;border:1px solid var(--border);font-size:13px">
+                <input type="radio" name="sndEnv" value="qa" style="accent-color:var(--accent)"> QA
+              </label>
+              <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;padding:8px 18px;border-radius:6px;border:1px solid var(--border);font-size:13px;opacity:0.45" title="Prod not yet configured">
+                <input type="radio" name="sndEnv" value="prod" disabled style="accent-color:var(--accent)"> Prod <span style="font-size:10px;color:var(--text-sec)">(soon)</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Store Number Header <span style="font-size:10px;color:var(--text-sec);font-weight:400">(storenumber header)</span></label>
+            <input id="sndStoreHdr" value="02202" placeholder="e.g. 02202" style="max-width:160px"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Authorization Token <span style="font-size:10px;color:var(--text-sec);font-weight:400">(Bearer — value after "Bearer " in Authorization header)</span></label>
+            <textarea id="sndAuthToken" rows="3" placeholder="Paste Bearer token here…" style="font-family:monospace;font-size:11px;word-break:break-all;resize:vertical"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Access Token <span style="font-size:10px;color:var(--text-sec);font-weight:400">(value of accesstoken header)</span></label>
+            <textarea id="sndAccessToken" rows="3" placeholder="Paste access token here…" style="font-family:monospace;font-size:11px;word-break:break-all;resize:vertical"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add / Update sub-tabs -->
+      <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content">
+        <button id="sndTabAdd" onclick="SendPromo.setSubMode('add')"
+          style="padding:9px 26px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--accent);color:#fff;transition:background .15s">
+          &#10133; Add Promotion
+        </button>
+        <button id="sndTabUpdate" onclick="SendPromo.setSubMode('update')"
+          style="padding:9px 26px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text);border-left:1px solid var(--border);transition:background .15s">
+          &#9998; Update Promotion
+        </button>
+      </div>
+
+      <!-- ── ADD sub-form ── -->
+      <div id="sndAddForm">
+        <!-- Promo-type reference (collapsible) -->
+        <details style="margin-bottom:14px;cursor:pointer">
+          <summary style="font-size:12px;font-weight:600;color:var(--accent);padding:8px 12px;border:1px solid var(--border);border-radius:6px;list-style:none;display:flex;align-items:center;gap:6px">
+            &#128203; Promo Type → Required promoDetails reference <span style="font-size:10px;color:var(--text-sec);font-weight:400">(click to expand)</span>
+          </summary>
+          <div style="margin-top:8px;overflow:auto;border-radius:6px;border:1px solid var(--border)">
+            <table style="font-size:11px;border-collapse:collapse;width:100%;min-width:420px">
+              <thead><tr style="background:var(--accent);color:#fff"><th style="padding:6px 10px;text-align:left">Promo Type</th><th style="padding:6px 10px;text-align:left">Required promoDetails keys</th></tr></thead>
+              <tbody>
+                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPO</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">TRTOD</td></tr>
+                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPOIP</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">INITD</td></tr>
+                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPOMNM</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">TRTOD, INITD</td></tr>
+                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>GCRP</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">INITD</td></tr>
+                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PAY4GET1</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">NUM_PAYMENT, PERCENT_OFF</td></tr>
+                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>HLFOFF_INT</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">USE_FREE_TIME, MAX_WEEKS, PERCENT_OFF</td></tr>
+                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PAYXSKIPY</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">NUM_PAYMENT, PERCENT_OFF</td></tr>
+                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>HLFOFF_NTR</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">PERCENT_OFF, MAX_DAYS</td></tr>
+                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPOIPF</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">MAX_DAYS_OTHER, MAX_DAYS_MONTHLY, INITD</td></tr>
+                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PAYXTOY</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">DEF_CLUB_PAYMENT</td></tr>
+                <tr style="background:var(--bg)"><td style="padding:5px 10px"><code>PAYNFSTY+</code></td><td style="padding:5px 10px">DEF_CLUB_PAYMENT</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start">
+          <!-- Left: Create Promo Schedule -->
+          <div>
+            <div class="card">
+              <div class="card-title">&#128203; Create Promo Schedule</div>
+              <div class="form-row">
+                <div class="form-group"><label>Promo Group <span style="color:var(--error)">*</span></label><input id="sndGroup" placeholder="e.g. GENERAL PROMOTION"/></div>
+                <div class="form-group"><label>Promo Type <span style="color:var(--error)">*</span></label><input id="sndType" placeholder="e.g. PIFEPO"/></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>Promo Name <span style="color:var(--error)">*</span></label><input id="sndName" placeholder="e.g. 100 Off TRTO HISENSE"/></div>
+                <div class="form-group"><label>Promo Code <span style="color:var(--error)">*</span></label><input id="sndCode" placeholder="e.g. HISENSE100"/></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>Start Date <span style="color:var(--error)">*</span></label><input id="sndStartDate" type="date"/></div>
+                <div class="form-group"><label>End Date <span style="color:var(--error)">*</span></label><input id="sndEndDate" type="date"/></div>
+              </div>
+              <!-- promoEnabled flags -->
+              <div class="form-row">
+                <div class="form-group"><label>Customer Order</label>
+                  <select id="sndCustOrder"><option value="Y">Y</option><option value="N">N</option></select></div>
+                <div class="form-group"><label>Ecomm</label>
+                  <select id="sndEcomm"><option value="Y">Y</option><option value="N">N</option></select></div>
+                <div class="form-group"><label>Online Only</label>
+                  <select id="sndOnlineOnly"><option value="N">N</option><option value="Y">Y</option></select></div>
+                <div class="form-group"><label>Promo Text Box</label>
+                  <select id="sndTextBox"><option value="Y">Y</option><option value="N">N</option></select></div>
+              </div>
+              <!-- promoConfig -->
+              <div style="margin:10px 0 6px;font-size:12px;font-weight:700;color:var(--text-sec);text-transform:uppercase;letter-spacing:.04em">&#9881; Promo Config <span style="font-weight:400;text-transform:none;color:var(--text-sec)">(leave blank if not needed)</span></div>
+              <div class="form-row">
+                <div class="form-group"><label>Promo Rate</label><input id="sndPromoRate" placeholder="e.g. 50.00"/></div>
+                <div class="form-group"><label>Due Date</label><input id="sndDueDate" type="date"/></div>
+                <div class="form-group"><label>Max Days Allowed</label><input id="sndMaxDays" placeholder="e.g. 30"/></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>Free Time Days Allowed</label><input id="sndFreetimeDays" placeholder=""/></div>
+                <div class="form-group"><label># of Free Days</label><input id="sndNumFreeDays" placeholder=""/></div>
+                <div class="form-group"><label>Referral Promo Free Days</label><input id="sndReferralDays" placeholder=""/></div>
+              </div>
+              <!-- Text fields -->
+              <div class="form-group" style="margin-top:4px"><label>Reason for Promotion <span style="font-size:10px;color:var(--text-sec)">(max 50 chars)</span></label>
+                <input id="sndReason" placeholder="e.g. SIMS/ECOM/RACPAD" maxlength="50"/></div>
+              <div class="form-group"><label>Promo Description <span style="font-size:10px;color:var(--text-sec)">(max 250 chars)</span></label>
+                <textarea id="sndDesc" rows="2" placeholder='e.g. ^"Get $100 Off" offer is valid on a new Hisense agreement…' maxlength="250"></textarea></div>
+              <div class="form-group"><label>Promo Details Text <span style="font-size:10px;color:var(--text-sec)">(fine print — max 1024 chars)</span></label>
+                <textarea id="sndDetailsText" rows="3" placeholder="Full terms and conditions text…" maxlength="1024"></textarea></div>
+              <!-- Key/Value promoDetails -->
+              <div style="margin:10px 0 6px;font-size:12px;font-weight:700;color:var(--text-sec);text-transform:uppercase;letter-spacing:.04em">&#128196; Promo Details (Key / Value)</div>
+              <div id="sndDetailsRows">
+                <div class="form-row sndDetailRow" style="align-items:center">
+                  <div class="form-group"><label>Promo Key</label><input class="sndKey" placeholder="e.g. TRTOD"/></div>
+                  <div class="form-group"><label>Promo Value</label><input class="sndVal" placeholder="e.g. 100"/></div>
+                  <div style="padding-top:22px"><button class="btn btn-danger btn-sm" onclick="SendPromo.removeDetail(this)">&#10006;</button></div>
+                </div>
+              </div>
+              <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="SendPromo.addDetail()">&#43; Add Row</button>
+            </div>
+          </div>
+          <!-- Right: Assign Stores -->
+          <div>
+            <div class="card" style="position:sticky;top:16px">
+              <div class="card-title">&#127970; Assign Stores</div>
+              <div class="form-group">
+                <label>Store Numbers <span style="color:var(--error)">*</span><br/><span style="font-size:10px;color:var(--text-sec);font-weight:400">comma, space or newline separated</span></label>
+                <textarea id="sndStores" rows="14" placeholder="e.g. 00145&#10;00176&#10;07280" style="font-family:monospace;font-size:12px"></textarea>
+              </div>
+              <button class="btn btn-primary" style="width:100%;font-size:14px;padding:12px" onclick="SendPromo.build()">&#128270; Build Payload &amp; Preview</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── UPDATE sub-form ── -->
+      <div id="sndUpdForm" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start">
+          <div>
+            <div class="card">
+              <div class="card-title">&#9998; Update Promotion Details</div>
+              <div class="form-row">
+                <div class="form-group"><label>Promotion ID <span style="color:var(--error)">*</span></label><input id="sndUpdPromoId" placeholder="e.g. 68643392"/></div>
+                <div class="form-group"><label>End Date <span style="color:var(--error)">*</span></label><input id="sndUpdEndDate" type="date"/></div>
+              </div>
+              <p style="font-size:12px;color:var(--text-sec);margin-bottom:8px">
+                <strong>promoEnabled</strong> — leave all on <em>—</em> to send an empty <code>{}</code> object (most common), or set Y/N to include them.
+              </p>
+              <div class="form-row">
+                <div class="form-group"><label>Customer Order Enabled <span style="font-size:10px;color:var(--text-sec)">(blank = omit)</span></label>
+                  <select id="sndUpdCustOrder"><option value="">— omit —</option><option value="Y">Y</option><option value="N">N</option></select></div>
+                <div class="form-group"><label>Ecomm Enabled <span style="font-size:10px;color:var(--text-sec)">(blank = omit)</span></label>
+                  <select id="sndUpdEcomm"><option value="">— omit —</option><option value="Y">Y</option><option value="N">N</option></select></div>
+                <div class="form-group"><label>Promo Text Box Enabled <span style="font-size:10px;color:var(--text-sec)">(blank = omit)</span></label>
+                  <select id="sndUpdTextBox"><option value="">— omit —</option><option value="Y">Y</option><option value="N">N</option></select></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="card" style="position:sticky;top:16px">
+              <div class="card-title">&#127970; Assign Stores</div>
+              <div class="form-group">
+                <label>Store Numbers <span style="color:var(--error)">*</span><br/><span style="font-size:10px;color:var(--text-sec);font-weight:400">comma, space or newline separated</span></label>
+                <textarea id="sndUpdStores" rows="14" placeholder="e.g. 00341&#10;01155&#10;01158" style="font-family:monospace;font-size:12px"></textarea>
+              </div>
+              <button class="btn btn-primary" style="width:100%;font-size:14px;padding:12px" onclick="SendPromo.buildUpdate()">&#128270; Build Payload &amp; Preview</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Response area -->
+      <div id="sndResult"></div>
     </div>
 
     <div id="promoResult"></div>
@@ -630,257 +734,19 @@ var Payment={
 };
 var Promotion = {
   _data: null,
-  _mode: 'add',   // 'add' | 'update'
   _esc: function(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')},
 
-  /* ── Tab switching ─────────────────────────────────────────────────── */
   setMode: function(mode){
-    Promotion._mode = mode;
     Promotion._data = null;
-    $('promoResult').innerHTML = '';
-    var isAdd      = mode === 'add';
-    var isUpdate   = mode === 'update';
-    var isExcluded = mode === 'excluded';
-    $('promoAddForm').style.display      = isAdd      ? '' : 'none';
-    $('promoUpdateForm').style.display   = isUpdate   ? '' : 'none';
+    if($('sndResult'))$('sndResult').innerHTML='';
+    if($('promoResult'))$('promoResult').innerHTML='';
+    var isSend     = mode==='send';
+    var isExcluded = mode==='excluded';
+    $('promoSendForm').style.display     = isSend     ? '' : 'none';
     $('promoExcludedForm').style.display = isExcluded ? '' : 'none';
-    // Tab highlight helper
-    function tab(el, active){
-      el.style.background = active ? 'var(--accent)' : 'var(--bg)';
-      el.style.color      = active ? '#fff'          : 'var(--text)';
-    }
-    tab($('tabAdd'),      isAdd);
-    tab($('tabUpdate'),   isUpdate);
+    function tab(el,active){el.style.background=active?'var(--accent)':'var(--bg)';el.style.color=active?'#fff':'var(--text)';}
+    tab($('tabSend'),     isSend);
     tab($('tabExcluded'), isExcluded);
-  },
-
-  /* ── Promo Details rows (Add mode) ─────────────────────────────────── */
-  addDetail: function(){
-    var row=document.createElement('div');row.className='form-row prmDetailRow';row.style.alignItems='center';
-    row.innerHTML='<div class="form-group"><label>Promo Key</label><input class="prmKey" placeholder="e.g. TRTOD"/></div><div class="form-group"><label>Promo Value</label><input class="prmVal" placeholder="e.g. 100"/></div><div style="padding-top:22px"><button class="btn btn-danger btn-sm" onclick="Promotion.removeDetail(this)">&#10006;</button></div>';
-    $('prmDetailsRows').appendChild(row);
-  },
-  removeDetail: function(btn){var row=btn.closest('.prmDetailRow');if(row)row.remove();},
-  _getDetails: function(){
-    var rows=document.querySelectorAll('.prmDetailRow'),details=[];
-    rows.forEach(function(r){var k=(r.querySelector('.prmKey')||{}).value||'';var v=(r.querySelector('.prmVal')||{}).value||'';if(k.trim())details.push({promoKey:k.trim(),promoValue:v.trim()});});
-    return details;
-  },
-
-  /* ── Build helper: shared org-result renderer ───────────────────────── */
-  _renderOrgs: function(d, html){
-    // Per-organization exclusion cards
-    d.organizations.forEach(function(org, idx){
-      html += '<div class="card"><div class="card-title">&#127970; '+Promotion._esc(org.company_name);
-      html += ' <span style="font-size:11px;font-weight:400;color:var(--text-sec)">(company_id: '+Promotion._esc(org.company_id)+')</span></div>';
-      html += '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:13px;margin-bottom:12px">';
-      html += '<span class="pill pill-ok">INCLUDED '+org.included_stores.length+'</span>';
-      html += '<span class="pill pill-err">EXCLUDED '+org.excluded_stores.length+'</span>';
-      html += '<span style="color:var(--text-sec)">Total active: <strong>'+org.total_org_stores+'</strong></span>';
-      html += '</div>';
-      html += '<div class="form-row">';
-      html += '<div class="form-group"><label>Company Code <span style="font-size:10px;color:var(--text-sec);font-weight:400">(edit to override default; updates payloads above)</span></label>';
-      html += '<input id="prmOrgCode-'+idx+'" value="'+Promotion._esc(org.company_code)+'" oninput="Promotion.updateCode('+idx+',this.value)"/></div>';
-      html += '<div class="form-group"><label>Included Stores ('+org.included_stores.length+')</label>';
-      html += '<textarea readonly rows="2" style="font-family:monospace;font-size:12px">'+org.included_stores.join(', ')+'</textarea></div>';
-      html += '</div>';
-      if(org.excluded_stores.length){
-        html += '<div class="diag-section"><h4>&#10060; Excluded from <em>'+Promotion._esc(org.company_name)+'</em> ('+org.excluded_stores.length+')</h4>';
-        html += '<div style="font-size:11px;color:var(--text-sec);margin-bottom:5px">Active stores in this org that are <strong>not</strong> in your input list — excluded from the payload.</div>';
-        html += '<div style="font-family:monospace;font-size:12px;background:var(--bg);padding:8px 10px;border-radius:6px;border:1px solid var(--border);max-height:120px;overflow:auto">'+org.excluded_stores.join(', ')+'</div>';
-        html += '</div>';
-      } else {
-        html += '<div class="alert alert-success" style="margin-top:6px">All active stores in this organization are included.</div>';
-      }
-      html += '</div>';
-    });
-    return html;
-  },
-
-  /* ── Rebuild company codes from current editable inputs ─────────────── */
-  _currentCodes: function(){
-    var d=Promotion._data;if(!d)return[];
-    return d.organizations.map(function(o){return o.company_code;});
-  },
-  _allStores: function(){
-    var d=Promotion._data;if(!d)return[];
-    var s=new Set();d.organizations.forEach(function(o){o.included_stores.forEach(function(st){s.add(st);});});
-    return Array.from(s).sort();
-  },
-
-  /* ── ADD mode ────────────────────────────────────────────────────────── */
-  build: async function(){
-    var stores=$('promoStores').value.trim(), endDate=$('prmEndDate').value.trim();
-    if(!stores){toast('Enter at least one store number','error');return;}
-    if(!endDate){toast('Enter End Date','error');return;}
-    $('promoResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Looking up organizations…</div>';
-    var body={
-      store_numbers:stores, promoGroup:$('prmGroup').value.trim(), promoType:$('prmType').value.trim(),
-      promoName:$('prmName').value.trim(), promoCode:$('prmCode').value.trim(),
-      startDate:$('prmStartDate').value.trim(), endDate:endDate,
-      promoDetails:Promotion._getDetails(), promoReason:$('prmReason').value.trim(),
-      promoDesc:$('prmDesc').value.trim(), promoDetailsText:$('prmDetailsText').value.trim(),
-      promoEnabled:{customerOrderEnabled:$('prmCustOrder').value,ecommEnabled:$('prmEcomm').value,promoTextBoxEnabled:$('prmTextBox').value},
-      hierarchyType:'STORE'
-    };
-    var r=await api('POST','/api/promotion/build-payload',body);
-    if(!r.ok){$('promoResult').innerHTML='<div class="alert alert-error">'+(r.data.error||'Request failed')+'</div>';return;}
-    Promotion._data=r.data;
-    Promotion._renderAdd();
-  },
-  _buildAddPayload: function(){
-    var d=Promotion._data;if(!d||!d.unified_payload)return null;
-    var p=JSON.parse(JSON.stringify(d.unified_payload));
-    p.assignStores.companyCode=Promotion._currentCodes();
-    p.assignStores.hierarchyValue=Promotion._allStores();
-    return p;
-  },
-  _renderAdd: function(){
-    var d=Promotion._data;if(!d)return;
-    var html='';
-    // Summary
-    html+='<div class="card"><div class="card-title">&#128202; Summary</div>';
-    html+='<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px">';
-    html+='<div><strong>'+d.input_count+'</strong> entered</div>';
-    html+='<div><strong style="color:var(--success)">'+d.matched_count+'</strong> matched</div>';
-    html+='<div><strong style="color:'+(d.unknown_stores.length?'var(--error)':'var(--text-sec)')+'">'+d.unknown_stores.length+'</strong> not found</div>';
-    html+='<div><strong>'+d.organizations.length+'</strong> org(s)</div>';
-    html+='</div>';
-    if(d.unknown_stores.length)html+='<div class="alert alert-error" style="margin-top:10px"><strong>Not found:</strong> '+d.unknown_stores.map(Promotion._esc).join(', ')+'</div>';
-    html+='</div>';
-    // Unified payload
-    if(d.organizations.length){
-      var pj=JSON.stringify(Promotion._buildAddPayload(),null,2);
-      html+='<div class="card"><div class="card-title">&#128196; Add Promotion — Unified Payload</div>';
-      html+='<div class="alert alert-info" style="font-size:12px;margin-bottom:10px">Edit a Company Code in any org card below — this payload auto-updates.</div>';
-      html+='<textarea id="promoUnifiedPayload" readonly rows="24" style="font-family:monospace;font-size:12px;width:100%">'+Promotion._esc(pj)+'</textarea>';
-      html+='<div style="margin-top:8px;display:flex;gap:8px">';
-      html+='<button class="btn btn-primary btn-sm" onclick="Promotion.copyUnified()">&#128203; Copy</button>';
-      html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.downloadUnified()">&#128229; Download JSON</button>';
-      html+='</div></div>';
-    }
-    html=Promotion._renderOrgs(d,html);
-    $('promoResult').innerHTML=html;
-  },
-  updateCode: function(idx,value){
-    var d=Promotion._data;if(!d)return;
-    var org=d.organizations[idx];if(!org)return;
-    org.company_code=String(value||'').trim();
-    if(Promotion._mode==='add'){
-      var ta=$('promoUnifiedPayload');
-      if(ta)ta.value=JSON.stringify(Promotion._buildAddPayload(),null,2);
-    } else {
-      var gta=$('promoGetStoresPayload');
-      if(gta)gta.value=JSON.stringify(Promotion._buildGetStoresPayload(),null,2);
-      var uta=$('promoUpdatePayload');
-      if(uta)uta.value=JSON.stringify(Promotion._buildUpdatePayload(),null,2);
-    }
-  },
-  copyUnified: function(){
-    var p=Promotion._buildAddPayload();if(!p){toast('No payload','error');return;}
-    var t=JSON.stringify(p,null,2);
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){toast('Copied','success')},function(){toast('Copy failed','error')});}
-    else{var ta=$('promoUnifiedPayload');if(ta){ta.select();document.execCommand('copy');toast('Copied','success');}}
-  },
-  downloadUnified: function(){
-    var p=Promotion._buildAddPayload();if(!p){toast('No payload','error');return;}
-    var d=Promotion._data,name='promo_add_'+(d.unified_payload.promoCode||'payload')+'.json';
-    var blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});
-    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
-    toast('Downloaded','success');
-  },
-
-  /* ── UPDATE mode ─────────────────────────────────────────────────────── */
-  buildUpdate: async function(){
-    var stores=$('updStores').value.trim(), endDate=$('updEndDate').value.trim(), promoId=$('updPromoId').value.trim();
-    if(!stores){toast('Enter at least one store number','error');return;}
-    if(!promoId){toast('Enter Promotion ID','error');return;}
-    if(!endDate){toast('Enter End Date','error');return;}
-    // Build promoEnabled — only include keys that are set
-    var pe={};
-    if($('updCustOrder').value)pe.customerOrderEnabled=$('updCustOrder').value;
-    if($('updEcomm').value)pe.ecommEnabled=$('updEcomm').value;
-    if($('updTextBox').value)pe.promoTextBoxEnabled=$('updTextBox').value;
-    $('promoResult').innerHTML='<div style="padding:20px;text-align:center"><span class="spinner"></span> Looking up organizations…</div>';
-    var body={store_numbers:stores,promotionId:promoId,endDate:endDate,promoEnabled:pe,hierarchyType:'STORE'};
-    var r=await api('POST','/api/promotion/update-payload',body);
-    if(!r.ok){$('promoResult').innerHTML='<div class="alert alert-error">'+(r.data.error||'Request failed')+'</div>';return;}
-    Promotion._data=r.data;
-    Promotion._renderUpdate();
-  },
-  _buildGetStoresPayload: function(){
-    var d=Promotion._data;if(!d||!d.get_stores_payload)return null;
-    var p=JSON.parse(JSON.stringify(d.get_stores_payload));
-    p.companyCode=Promotion._currentCodes();
-    return p;
-  },
-  _buildUpdatePayload: function(){
-    var d=Promotion._data;if(!d||!d.update_payload)return null;
-    var p=JSON.parse(JSON.stringify(d.update_payload));
-    p.assignStores.companyCode=Promotion._currentCodes();
-    p.assignStores.hierarchyValue=Promotion._allStores();
-    return p;
-  },
-  _renderUpdate: function(){
-    var d=Promotion._data;if(!d)return;
-    var html='';
-    // Summary
-    html+='<div class="card"><div class="card-title">&#128202; Summary</div>';
-    html+='<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px">';
-    html+='<div><strong>'+d.input_count+'</strong> entered</div>';
-    html+='<div><strong style="color:var(--success)">'+d.matched_count+'</strong> matched</div>';
-    html+='<div><strong style="color:'+(d.unknown_stores.length?'var(--error)':'var(--text-sec)')+'">'+d.unknown_stores.length+'</strong> not found</div>';
-    html+='<div><strong>'+d.organizations.length+'</strong> org(s)</div>';
-    html+='</div>';
-    if(d.unknown_stores.length)html+='<div class="alert alert-error" style="margin-top:10px"><strong>Not found:</strong> '+d.unknown_stores.map(Promotion._esc).join(', ')+'</div>';
-    html+='</div>';
-    if(d.organizations.length){
-      // Payload 1 — Get Stores
-      var gj=JSON.stringify(Promotion._buildGetStoresPayload(),null,2);
-      html+='<div class="card"><div class="card-title">&#128196; API Call 1 — Get Stores Payload <span style="font-size:11px;font-weight:400;color:var(--text-sec)">(send this first)</span></div>';
-      html+='<div class="alert alert-info" style="font-size:12px;margin-bottom:10px">Send this payload to retrieve existing store assignments before applying the update.</div>';
-      html+='<textarea id="promoGetStoresPayload" readonly rows="8" style="font-family:monospace;font-size:12px;width:100%">'+Promotion._esc(gj)+'</textarea>';
-      html+='<div style="margin-top:8px;display:flex;gap:8px">';
-      html+='<button class="btn btn-primary btn-sm" onclick="Promotion.copyGetStores()">&#128203; Copy</button>';
-      html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.downloadGetStores()">&#128229; Download JSON</button>';
-      html+='</div></div>';
-      // Payload 2 — Update
-      var uj=JSON.stringify(Promotion._buildUpdatePayload(),null,2);
-      html+='<div class="card"><div class="card-title">&#128196; API Call 2 — Update Promotion Payload <span style="font-size:11px;font-weight:400;color:var(--text-sec)">(send after call 1)</span></div>';
-      html+='<div class="alert alert-info" style="font-size:12px;margin-bottom:10px">Edit a Company Code in any org card below — both payloads auto-update.</div>';
-      html+='<textarea id="promoUpdatePayload" readonly rows="18" style="font-family:monospace;font-size:12px;width:100%">'+Promotion._esc(uj)+'</textarea>';
-      html+='<div style="margin-top:8px;display:flex;gap:8px">';
-      html+='<button class="btn btn-primary btn-sm" onclick="Promotion.copyUpdate()">&#128203; Copy</button>';
-      html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.downloadUpdate()">&#128229; Download JSON</button>';
-      html+='</div></div>';
-    }
-    html=Promotion._renderOrgs(d,html);
-    $('promoResult').innerHTML=html;
-  },
-  copyGetStores: function(){
-    var p=Promotion._buildGetStoresPayload();if(!p)return;
-    var t=JSON.stringify(p,null,2);
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){toast('Get Stores payload copied','success')},function(){toast('Copy failed','error')});}
-    else{var ta=$('promoGetStoresPayload');if(ta){ta.select();document.execCommand('copy');toast('Copied','success');}}
-  },
-  downloadGetStores: function(){
-    var p=Promotion._buildGetStoresPayload();if(!p)return;
-    var blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});
-    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='promo_get_stores.json';a.click();
-    toast('Downloaded','success');
-  },
-  copyUpdate: function(){
-    var p=Promotion._buildUpdatePayload();if(!p)return;
-    var t=JSON.stringify(p,null,2);
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){toast('Update payload copied','success')},function(){toast('Copy failed','error')});}
-    else{var ta=$('promoUpdatePayload');if(ta){ta.select();document.execCommand('copy');toast('Copied','success');}}
-  },
-  downloadUpdate: function(){
-    var p=Promotion._buildUpdatePayload();if(!p)return;
-    var d=Promotion._data,name='promo_update_'+(d.update_payload.promotionId||'payload')+'.json';
-    var blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});
-    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
-    toast('Downloaded','success');
   },
 
   /* ── EXCLUDED STORES mode ─────────────────────────────────────────────── */
@@ -896,7 +762,6 @@ var Promotion = {
   _renderExcluded: function(){
     var d=Promotion._data;if(!d)return;
     var html='';
-    // Summary
     html+='<div class="card"><div class="card-title">&#128202; Summary</div>';
     html+='<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px">';
     html+='<div><strong>'+d.input_count+'</strong> store(s) entered</div>';
@@ -908,57 +773,278 @@ var Promotion = {
       html+='<div class="alert alert-error" style="margin-top:10px"><strong>Stores not found in any active organization:</strong> '+d.unknown_stores.map(Promotion._esc).join(', ')+'</div>';
     }
     html+='</div>';
-
-    // Per-org exclusion table
-    d.organizations.forEach(function(org){
-      var hasExcluded = org.excluded_stores.length > 0;
+    d.organizations.forEach(function(org, orgIdx){
+      var hasExcluded=org.excluded_stores.length>0;
       html+='<div class="card">';
       html+='<div class="card-title">&#127970; '+Promotion._esc(org.company_name);
       html+=' <span style="font-size:11px;font-weight:400;color:var(--text-sec)">(company_id: '+Promotion._esc(org.company_id)+')</span></div>';
-      // Stats pills
       html+='<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:13px;margin-bottom:14px">';
       html+='<span class="pill pill-ok">YOUR STORES &nbsp;'+org.included_stores.length+'</span>';
       html+='<span class="pill pill-err">EXCLUDED &nbsp;'+org.excluded_stores.length+'</span>';
       html+='<span style="color:var(--text-sec)">Total active in org: <strong>'+org.total_org_stores+'</strong></span>';
       html+='</div>';
-      // Included stores (user's input)
       html+='<div class="form-group"><label style="font-size:11px;font-weight:700;color:var(--text-sec);text-transform:uppercase">Your Included Stores ('+org.included_stores.length+')</label>';
       html+='<div style="font-family:monospace;font-size:12px;background:rgba(16,185,129,.07);padding:8px 10px;border-radius:6px;border:1px solid rgba(16,185,129,.3);word-break:break-all">'+org.included_stores.join(', ')+'</div></div>';
-      // Excluded stores
       if(hasExcluded){
-        html+='<div style="margin-top:10px"><label style="font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase;display:block;margin-bottom:6px">Excluded Stores ('+org.excluded_stores.length+') — active in this org but NOT in your list</label>';
+        html+='<div style="margin-top:10px"><label style="font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase;display:block;margin-bottom:6px">Excluded Stores ('+org.excluded_stores.length+') \u2014 active in this org but NOT in your list</label>';
         html+='<div style="font-family:monospace;font-size:12px;background:rgba(239,68,68,.05);padding:8px 10px;border-radius:6px;border:1px solid rgba(239,68,68,.25);max-height:160px;overflow:auto;word-break:break-all">'+org.excluded_stores.join(', ')+'</div>';
-        // Download excluded list for this org
         html+='<div style="margin-top:8px">';
-        html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.copyExcluded(\''+Promotion._esc(org.company_id)+'\')">&#128203; Copy Excluded</button> ';
-        html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.downloadExcluded(\''+Promotion._esc(org.company_id)+'\',\''+Promotion._esc(org.company_name)+'\')">&#128229; Download CSV</button>';
+        html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.copyExcluded('+orgIdx+')">&#128203; Copy Excluded</button> ';
+        html+='<button class="btn btn-secondary btn-sm" onclick="Promotion.downloadExcluded('+orgIdx+')">&#128229; Download CSV</button>';
         html+='</div></div>';
       } else {
-        html+='<div class="alert alert-success" style="margin-top:6px">&#10003; All active stores in this organization are in your list — nothing is excluded.</div>';
+        html+='<div class="alert alert-success" style="margin-top:6px">&#10003; All active stores in this organization are in your list \u2014 nothing is excluded.</div>';
       }
       html+='</div>';
     });
     $('promoResult').innerHTML=html;
   },
-  copyExcluded: function(companyId){
+  copyExcluded: function(idx){
     var d=Promotion._data;if(!d)return;
-    var org=d.organizations.find(function(o){return o.company_id===companyId;});
+    var org=d.organizations[idx];
     if(!org||!org.excluded_stores.length){toast('No excluded stores','info');return;}
     var text=org.excluded_stores.join('\n');
     if(navigator.clipboard&&navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(function(){toast('Excluded stores copied','success')},function(){toast('Copy failed','error')});
     }
   },
-  downloadExcluded: function(companyId,companyName){
+  downloadExcluded: function(idx){
     var d=Promotion._data;if(!d)return;
-    var org=d.organizations.find(function(o){return o.company_id===companyId;});
+    var org=d.organizations[idx];
     if(!org||!org.excluded_stores.length){toast('No excluded stores','info');return;}
     var csv='store_number\n'+org.excluded_stores.join('\n');
     var blob=new Blob([csv],{type:'text/csv'});
     var a=document.createElement('a');
-    var name='excluded_stores_'+(companyName||companyId).replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)+'.csv';
+    var name='excluded_stores_'+(org.company_name||org.company_id).replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)+'.csv';
     a.href=URL.createObjectURL(blob);a.download=name;a.click();
     toast('CSV downloaded','success');
+  }
+};
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SendPromo — Build payload preview then send to Dev / QA API
+   Flow: build() → _renderPreview() → sendToApi() → _renderResponse()
+   ════════════════════════════════════════════════════════════════════════════ */
+var SendPromo = {
+  _subMode: 'add',
+  _retryEnv: 'dev', _retryAuth: '', _retryAccess: '', _retryStoreHdr: '02202',
+
+  _getEnv: function(){
+    var radios=document.querySelectorAll('input[name="sndEnv"]');
+    for(var i=0;i<radios.length;i++){if(radios[i].checked)return radios[i].value;}
+    return 'dev';
+  },
+  _esc: function(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');},
+
+  setSubMode: function(mode){
+    SendPromo._subMode=mode;
+    if($('sndResult'))$('sndResult').innerHTML='';
+    var isAdd=mode==='add';
+    $('sndAddForm').style.display =isAdd?'':'none';
+    $('sndUpdForm').style.display =isAdd?'none':'';
+    function tab(el,active){el.style.background=active?'var(--accent)':'var(--bg)';el.style.color=active?'#fff':'var(--text)';}
+    tab($('sndTabAdd'),isAdd);tab($('sndTabUpdate'),!isAdd);
+  },
+
+  addDetail:function(){
+    var row=document.createElement('div');row.className='form-row sndDetailRow';row.style.alignItems='center';
+    row.innerHTML='<div class="form-group"><label>Promo Key</label><input class="sndKey" placeholder="e.g. TRTOD"/></div><div class="form-group"><label>Promo Value</label><input class="sndVal" placeholder="e.g. 100"/></div><div style="padding-top:22px"><button class="btn btn-danger btn-sm" onclick="SendPromo.removeDetail(this)">&#10006;</button></div>';
+    $('sndDetailsRows').appendChild(row);
+  },
+  removeDetail:function(btn){var row=btn.closest('.sndDetailRow');if(row)row.remove();},
+  _getDetails:function(){
+    var rows=document.querySelectorAll('.sndDetailRow'),details=[];
+    rows.forEach(function(r){var k=(r.querySelector('.sndKey')||{}).value||'';var v=(r.querySelector('.sndVal')||{}).value||'';if(k.trim())details.push({promoKey:k.trim(),promoValue:v.trim()});});
+    return details;
+  },
+  _validate:function(fields){
+    for(var i=0;i<fields.length;i++){if(!fields[i][0]){toast(fields[i][1],'error');return false;}}
+    return true;
+  },
+
+  /* ── STEP 1: Build — calls proxy-build, shows preview ─────────────────── */
+  build: async function(){
+    var env=SendPromo._getEnv(), authToken=$('sndAuthToken').value.trim(), accessToken=$('sndAccessToken').value.trim();
+    var storeHdr=$('sndStoreHdr').value.trim()||'02202', stores=$('sndStores').value.trim(), endDate=$('sndEndDate').value.trim();
+    if(!SendPromo._validate([
+      [stores,'Enter at least one store number'],[endDate,'Enter End Date'],
+      [$('sndGroup').value.trim(),'Enter Promo Group'],[$('sndType').value.trim(),'Enter Promo Type'],
+      [$('sndName').value.trim(),'Enter Promo Name'],[$('sndCode').value.trim(),'Enter Promo Code']
+    ]))return;  // auth fields are optional
+
+    SendPromo._retryEnv=env;SendPromo._retryAuth=authToken;SendPromo._retryAccess=accessToken;SendPromo._retryStoreHdr=storeHdr;
+    $('sndResult').innerHTML='<div style="padding:24px;text-align:center"><span class="spinner"></span> Looking up organizations &amp; building payload…</div>';
+
+    var promoConfig={
+      promoRate:$('sndPromoRate').value.trim(), dueDate:$('sndDueDate').value.trim(),
+      maxDaysAllowed:$('sndMaxDays').value.trim(), freeTimeDaysAllowed:$('sndFreetimeDays').value.trim(),
+      numberOfFreeDays:$('sndNumFreeDays').value.trim(), referralPromoFreeDays:$('sndReferralDays').value.trim()
+    };
+    var body={
+      action:'add', store_numbers:stores,
+      promoGroup:$('sndGroup').value.trim(), promoType:$('sndType').value.trim(),
+      promoName:$('sndName').value.trim(), promoCode:$('sndCode').value.trim(),
+      startDate:$('sndStartDate').value.trim(), endDate:endDate,
+      promoConfig:promoConfig, promoDetails:SendPromo._getDetails(),
+      promoReason:$('sndReason').value.trim(), promoDesc:$('sndDesc').value.trim(),
+      promoDetailsText:$('sndDetailsText').value.trim(),
+      promoEnabled:{customerOrderEnabled:$('sndCustOrder').value,ecommEnabled:$('sndEcomm').value,
+                    onlineOnlyEnabled:$('sndOnlineOnly').value,promoTextBoxEnabled:$('sndTextBox').value},
+      hierarchyType:'STORE'
+    };
+    var r=await api('POST','/api/promotion/proxy-build',body);
+    if(!r.ok){$('sndResult').innerHTML='<div class="alert alert-error" style="margin-top:16px">&#10060; '+(r.data.error||'Build failed')+'</div>';return;}
+    SendPromo._renderPreview(r.data,env);
+  },
+
+  buildUpdate: async function(){
+    var env=SendPromo._getEnv(), authToken=$('sndAuthToken').value.trim(), accessToken=$('sndAccessToken').value.trim();
+    var storeHdr=$('sndStoreHdr').value.trim()||'02202', stores=$('sndUpdStores').value.trim();
+    var endDate=$('sndUpdEndDate').value.trim(), promoId=$('sndUpdPromoId').value.trim();
+    if(!SendPromo._validate([
+      [stores,'Enter at least one store number'],[promoId,'Enter Promotion ID'],[endDate,'Enter End Date']
+    ]))return;  // auth fields are optional
+
+    SendPromo._retryEnv=env;SendPromo._retryAuth=authToken;SendPromo._retryAccess=accessToken;SendPromo._retryStoreHdr=storeHdr;
+    $('sndResult').innerHTML='<div style="padding:24px;text-align:center"><span class="spinner"></span> Looking up organizations &amp; building payload…</div>';
+
+    var pe={};
+    if($('sndUpdCustOrder').value)pe.customerOrderEnabled=$('sndUpdCustOrder').value;
+    if($('sndUpdEcomm').value)pe.ecommEnabled=$('sndUpdEcomm').value;
+    if($('sndUpdTextBox').value)pe.promoTextBoxEnabled=$('sndUpdTextBox').value;
+
+    var body={action:'update',store_numbers:stores,promotionId:promoId,endDate:endDate,promoEnabled:pe,hierarchyType:'STORE'};
+    var r=await api('POST','/api/promotion/proxy-build',body);
+    if(!r.ok){$('sndResult').innerHTML='<div class="alert alert-error" style="margin-top:16px">&#10060; '+(r.data.error||'Build failed')+'</div>';return;}
+    SendPromo._renderPreview(r.data,env);
+  },
+
+  /* ── Preview renderer ─────────────────────────────────────────────────── */
+  _renderPreview: function(d, env){
+    var bs=d.build_summary, html='';
+
+    // Summary banner
+    html+='<div class="card" style="margin-top:16px;border-left:4px solid var(--accent)">';
+    html+='<div class="card-title">&#128270; Payload Preview — '+SendPromo._esc(env.toUpperCase())+'</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:13px;margin-bottom:10px">';
+    html+='<div>&#128203; <strong>'+bs.input_count+'</strong> store(s) entered</div>';
+    html+='<div style="color:var(--success)">&#9989; <strong>'+bs.matched_count+'</strong> matched to an org</div>';
+    html+='<div style="color:'+(bs.unknown_stores.length?'var(--error)':'var(--text-sec)')+'">&#128683; <strong>'+bs.unknown_stores.length+'</strong> not found / inactive</div>';
+    html+='<div>&#127970; <strong>'+bs.organizations.length+'</strong> organization(s)</div>';
+    html+='</div>';
+    if(bs.unknown_stores.length){
+      html+='<div class="alert alert-error"><strong>Not found / inactive stores:</strong> '+bs.unknown_stores.map(SendPromo._esc).join(', ')+'</div>';
+    }
+    html+='</div>';
+
+    // Per-org breakdown
+    bs.organizations.forEach(function(org){
+      var hasBoth=org.excluded_stores.length>0;
+      html+='<div class="card" style="border-left:3px solid '+(hasBoth?'var(--error)':'var(--success)')+'">';
+      html+='<div class="card-title" style="font-size:13px">&#127970; '+SendPromo._esc(org.company_name);
+      html+=' <span style="font-size:11px;font-weight:400;color:var(--text-sec)">(company_code: '+SendPromo._esc(org.company_code)+')</span></div>';
+      html+='<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:12px;margin-bottom:8px">';
+      html+='<span class="pill pill-ok">&#9989; INCLUDED: '+org.included_stores.length+'</span>';
+      html+='<span class="pill pill-err">&#10060; EXCLUDED: '+org.excluded_stores.length+'</span>';
+      html+='<span style="color:var(--text-sec)">Total active in org: <strong>'+org.total_org_stores+'</strong></span>';
+      html+='</div>';
+      html+='<div style="font-size:11px;color:var(--text-sec);margin-bottom:4px"><strong>Included:</strong> <span style="font-family:monospace">'+org.included_stores.join(', ')+'</span></div>';
+      if(hasBoth){
+        html+='<details><summary style="font-size:11px;color:var(--error);cursor:pointer">&#9660; Show '+org.excluded_stores.length+' excluded stores</summary>';
+        html+='<div style="font-size:11px;font-family:monospace;color:var(--text-sec);margin-top:4px;max-height:80px;overflow:auto">'+org.excluded_stores.join(', ')+'</div></details>';
+      }
+      html+='</div>';
+    });
+
+    // Payload review + send
+    var pj=JSON.stringify(d.payload,null,2);
+    html+='<div class="card">';
+    html+='<div class="card-title">&#128196; Payload to be Sent</div>';
+    html+='<div class="alert alert-info" style="font-size:12px;margin-bottom:10px">Review and edit the payload below if needed. When satisfied, click <strong>Send to '+SendPromo._esc(env.toUpperCase())+'</strong>.</div>';
+    html+='<textarea id="sndRetryPayload" rows="24" style="font-family:monospace;font-size:12px;width:100%;border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--bg);color:var(--text)">'+SendPromo._esc(pj)+'</textarea>';
+    html+='<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">';
+    var hasAuth = SendPromo._retryAuth && SendPromo._retryAccess;
+    if(hasAuth){
+      html+='<button class="btn btn-primary" style="font-size:14px;padding:10px 28px" onclick="SendPromo.sendToApi()">&#128640; Send to '+SendPromo._esc(env.toUpperCase())+'</button>';
+    } else {
+      html+='<div class="alert alert-info" style="margin:0;font-size:12px;flex:1">&#8505; <strong>Authorization Token</strong> and <strong>Access Token</strong> are required to send to the API. Fill them in above and click <strong>Build Payload &amp; Preview</strong> again to unlock the Send button.</div>';
+    }
+    html+='<button class="btn btn-secondary btn-sm" onclick="SendPromo.copyPayload()">&#128203; Copy</button>';
+    html+='<button class="btn btn-secondary btn-sm" onclick="SendPromo.downloadPayload()">&#128229; Download JSON</button>';
+    html+='</div></div>';
+
+    $('sndResult').innerHTML=html;
+    $('sndResult').scrollIntoView({behavior:'smooth',block:'start'});
+  },
+
+  /* ── STEP 2: Send — takes payload from textarea, calls proxy-retry ─────── */
+  sendToApi: async function(){
+    var ta=$('sndRetryPayload');
+    if(!ta){toast('No payload to send','error');return;}
+    var payload;
+    try{payload=JSON.parse(ta.value);}
+    catch(e){toast('Invalid JSON: '+e.message,'error');return;}
+    var env=SendPromo._retryEnv;
+    $('sndResult').innerHTML='<div style="padding:24px;text-align:center"><span class="spinner"></span> Sending to '+env.toUpperCase()+'…</div>';
+    var r=await api('POST','/api/promotion/proxy-retry',{
+      env:env, auth_token:SendPromo._retryAuth,
+      access_token:SendPromo._retryAccess, store_number_header:SendPromo._retryStoreHdr, payload:payload
+    });
+    SendPromo._renderResponse(r,env);
+  },
+
+  /* ── Response renderer (shown after actual API call) ──────────────────── */
+  _renderResponse: function(r, env){
+    var d=r.data, html='';
+    if(!r.ok&&!d.api_status){
+      $('sndResult').innerHTML='<div class="alert alert-error" style="margin-top:16px">&#10060; '+(d.error||'Request failed')+'</div>';
+      return;
+    }
+    var status=d.api_status, success=d.success;
+    var statusColor=success?'var(--success)':'var(--error)';
+
+    html+='<div class="card" style="margin-top:16px;border-left:4px solid '+statusColor+'">';
+    html+='<div class="card-title">'+(success?'&#9989;':'&#10060;')+' API Response — '+SendPromo._esc(env.toUpperCase())+'</div>';
+    html+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px">';
+    html+='<div style="padding:6px 24px;border-radius:20px;font-size:20px;font-weight:700;background:'+(success?'rgba(16,185,129,.12)':'rgba(239,68,68,.12)')+';color:'+statusColor+'">HTTP '+status+'</div>';
+    html+='<div style="font-size:13px">Environment: <strong>'+SendPromo._esc(env.toUpperCase())+'</strong></div>';
+    html+='</div>';
+    html+='<label style="font-size:11px;font-weight:700;color:var(--text-sec);text-transform:uppercase;display:block;margin-bottom:6px">Response Body</label>';
+    var respText=JSON.stringify(d.api_response,null,2);
+    html+='<div style="font-family:monospace;font-size:12px;background:var(--bg);border:1px solid '+(success?'rgba(16,185,129,.4)':'rgba(239,68,68,.4)')+';border-radius:6px;padding:12px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-all">'+SendPromo._esc(respText)+'</div>';
+    html+='</div>';
+
+    if(d.payload_sent){
+      var pj=JSON.stringify(d.payload_sent,null,2);
+      html+='<div class="card">';
+      html+='<div class="card-title">&#128196; Payload That Was Sent</div>';
+      if(!success){
+        html+='<div class="alert alert-error" style="margin-bottom:10px">&#9888; API returned an error. Edit the payload below and retry.</div>';
+      } else {
+        html+='<div class="alert alert-success" style="margin-bottom:10px">&#9989; Request succeeded!</div>';
+      }
+      html+='<textarea id="sndRetryPayload" rows="20" style="font-family:monospace;font-size:12px;width:100%;border:1px solid '+(success?'var(--border)':'var(--error)')+';border-radius:6px;padding:10px;background:var(--bg);color:var(--text)">'+SendPromo._esc(pj)+'</textarea>';
+      html+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
+      html+='<button class="btn btn-primary" onclick="SendPromo.sendToApi()">&#128260; Retry with Edited Payload</button>';
+      html+='<button class="btn btn-secondary btn-sm" onclick="SendPromo.copyPayload()">&#128203; Copy</button>';
+      html+='<button class="btn btn-secondary btn-sm" onclick="SendPromo.downloadPayload()">&#128229; Download JSON</button>';
+      html+='</div></div>';
+    }
+    $('sndResult').innerHTML=html;
+    $('sndResult').scrollIntoView({behavior:'smooth',block:'start'});
+  },
+
+  copyPayload:function(){
+    var ta=$('sndRetryPayload');if(!ta)return;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(ta.value).then(function(){toast('Copied','success')},function(){toast('Copy failed','error')});
+    }else{ta.select();document.execCommand('copy');toast('Copied','success');}
+  },
+  downloadPayload:function(){
+    var ta=$('sndRetryPayload');if(!ta)return;
+    var blob=new Blob([ta.value],{type:'application/json'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='promo_payload.json';a.click();
+    toast('Downloaded','success');
   }
 };
 </script>
