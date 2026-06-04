@@ -1453,11 +1453,77 @@ _PROMO_URLS = {
     "qa":   "https://qa-pricing-racpad.rentacenter.com/api/schedule",
     "prod": "",
 }
+_PROMO_HIERARCHY_URLS = {
+    "dev":  "https://dev-pricing-racpad.rentacenter.com/api/hierarchy",
+    "qa":   "https://qa-pricing-racpad.rentacenter.com/api/hierarchy",
+    "prod": "",
+}
 _PROMO_ORIGINS = {
     "dev":  "https://dev-menu-racpad.rentacenter.com",
     "qa":   "https://qa-menu-racpad.rentacenter.com",
     "prod": "",
 }
+
+
+@app.route("/api/promotion/fetch-hierarchy", methods=["POST"])
+def api_promotion_fetch_hierarchy():
+    """Fetch promo groups and promo types from the hierarchy API."""
+    data         = request.get_json(force=True) or {}
+    env          = data.get("env", "dev").lower()
+    auth_token   = (data.get("auth_token") or "").strip()
+    access_token = (data.get("access_token") or "").strip()
+    store_hdr    = (data.get("store_number_header") or "02202").strip()
+
+    url = _PROMO_HIERARCHY_URLS.get(env, "")
+    if not url:
+        return jsonify({"error": f"Environment '{env}' not configured"}), 400
+    if not auth_token or not access_token:
+        return jsonify({"error": "Authorization Token and Access Token are required"}), 400
+
+    origin = _PROMO_ORIGINS.get(env, "")
+    headers = {
+        "Authorization":  f"Bearer {auth_token}",
+        "accesstoken":    access_token,
+        "storenumber":    store_hdr,
+        "Content-Type":   "application/json",
+        "Accept":         "application/json",
+        "Origin":         origin,
+        "Referer":        origin + "/",
+    }
+    payload = {"type": "COMPANY", "isPromoGroupAndTypeRequired": "Y"}
+    try:
+        resp = http_requests.post(url, json=payload, headers=headers, timeout=20)
+    except Exception as e:
+        return jsonify({"error": f"Request failed: {e}"}), 502
+
+    try:
+        body = resp.json()
+    except Exception:
+        return jsonify({"error": f"Non-JSON response (HTTP {resp.status_code})"}), 502
+
+    if not resp.ok:
+        return jsonify({"error": f"API returned HTTP {resp.status_code}", "api_response": body}), 502
+
+    # Extract promo groups
+    promo_groups = []
+    for g in (body.get("promoGroup") or {}).get("referenceDetails") or []:
+        promo_groups.append({
+            "code": g.get("promotionGroupCode", ""),
+            "name": g.get("promotionGroupName", ""),
+        })
+
+    # Extract promo types
+    promo_types = []
+    for t in (body.get("promotype") or {}).get("referenceDetails") or []:
+        promo_types.append({
+            "code":        t.get("referenceCode", ""),
+            "description": t.get("description", ""),
+        })
+
+    return jsonify({
+        "promo_groups": promo_groups,
+        "promo_types":  promo_types,
+    })
 
 
 def _promotion_db_lookup(store_numbers):
