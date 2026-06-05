@@ -1,20 +1,35 @@
-<<<<<<< HEAD
-# Racpad-Support_tool
-=======
-# Racpad Support Tool (Pricing & PO Diagnostics)
+# Racpad Support Tool 
 
 Quick instructions to get the app running locally on Windows.
+
+## Prerequisites — Install Python (one-time, no admin rights required)
+
+> Skip this section if Python is already installed on your machine.
+
+1. Go to **https://www.python.org/downloads/windows/**
+
+   ![Python Downloads Page](docs/images/python-site.png)
+
+2. Under **Stable Releases**, find **Python install manager** and click **Download Windows Installer (64-bit)** to download the Windows Install Manager `.exe`.
+3. Once downloaded, **double-click the `.exe`** to launch the installer.
+4. On the installer's first screen:
+   - **Uncheck** `Use admin privileges when installing py.exe`
+   - **Keep checked** `Add python.exe to PATH`
+
+   ![Python Installer Screen](docs/images/installer.png)
+
+5. Click **Install Now** and wait for the installation to complete.
+6. Close the installer when done.
 
 ## Requirements
 
 - Windows 10 / 11
-- Python 3.10 or newer (must be on PATH)
+- Python 3.10 or newer (see Prerequisites above)
 - Network access to your RAC / Pricing databases (VPN if required)
 
 ## Getting Started
 
-1. **Clone the repository**
-   - Clone this repository from GitHub to your local machine.
+1. **Clone or copy the project folder** to your local machine.
 
 2. **Initial Setup (one-time only)**
    - Double-click the `setup.bat` file in the project folder. This will create a virtual environment and install all required dependencies.
