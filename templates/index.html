@@ -188,13 +188,13 @@ tr:hover td{background:var(--accent-light)}
   <!-- ── Promotion Manager ── -->
   <div class="page" id="page-promotion">
     <h1 class="page-title">Promotion Manager</h1>
-    <p class="page-desc">Build and send promotion payloads to Dev or QA. Auth fields are optional — fill them in to send directly to the API, or leave blank to just preview the payload.</p>
+    <p class="page-desc">Update existing promotions and send payloads to Dev or QA. Auth fields are optional — fill them in to send directly to the API, or leave blank to just preview the payload.</p>
 
     <!-- Mode tabs -->
     <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content">
       <button id="tabSend" onclick="Promotion.setMode('send')"
         style="padding:10px 28px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--accent);color:#fff;transition:background .15s">
-        &#127873; Add / Update Promotion
+        &#9998; Update Promotion
       </button>
       <button id="tabExcluded" onclick="Promotion.setMode('excluded')"
         style="padding:10px 28px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text);border-left:1px solid var(--border);transition:background .15s">
@@ -255,140 +255,18 @@ tr:hover td{background:var(--accent-light)}
             <textarea id="sndAccessToken" rows="3" placeholder="Paste access token here…" style="font-family:monospace;font-size:11px;word-break:break-all;resize:vertical"></textarea>
           </div>
         </div>
-        <!-- Generate Token via SSO + Load Dropdowns -->
+        <!-- Generate Token via SSO -->
         <div style="display:flex;align-items:center;gap:12px;margin-top:4px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" id="btnGenerateToken" onclick="TokenGen.start()" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;font-weight:600">
             &#128273; Generate Token via SSO
           </button>
           <button class="btn btn-danger btn-sm" id="btnCancelToken" onclick="TokenGen.cancel()" style="display:none">&#10006; Cancel</button>
-          <button class="btn btn-secondary btn-sm" id="btnLoadDropdowns" onclick="SendPromo.loadDropdowns()" style="border-color:var(--success);color:var(--success);font-weight:600">
-            &#128260; Load Promo Group &amp; Type Dropdowns
-          </button>
           <span id="tokenGenStatus" style="font-size:12px;color:var(--text-sec)"></span>
-          <span id="dropdownStatus" style="font-size:12px;color:var(--text-sec)"></span>
         </div>
       </div>
 
-      <!-- Add / Update sub-tabs -->
-      <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content">
-        <button id="sndTabAdd" onclick="SendPromo.setSubMode('add')"
-          style="padding:9px 26px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--accent);color:#fff;transition:background .15s">
-          &#10133; Add Promotion
-        </button>
-        <button id="sndTabUpdate" onclick="SendPromo.setSubMode('update')"
-          style="padding:9px 26px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text);border-left:1px solid var(--border);transition:background .15s">
-          &#9998; Update Promotion
-        </button>
-      </div>
-
-      <!-- ── ADD sub-form ── -->
-      <div id="sndAddForm">
-        <!-- Promo-type reference (collapsible) -->
-        <details style="margin-bottom:14px;cursor:pointer">
-          <summary style="font-size:12px;font-weight:600;color:var(--accent);padding:8px 12px;border:1px solid var(--border);border-radius:6px;list-style:none;display:flex;align-items:center;gap:6px">
-            &#128203; Promo Type → Required promoDetails reference <span style="font-size:10px;color:var(--text-sec);font-weight:400">(click to expand)</span>
-          </summary>
-          <div style="margin-top:8px;overflow:auto;border-radius:6px;border:1px solid var(--border)">
-            <table style="font-size:11px;border-collapse:collapse;width:100%;min-width:420px">
-              <thead><tr style="background:var(--accent);color:#fff"><th style="padding:6px 10px;text-align:left">Promo Type</th><th style="padding:6px 10px;text-align:left">Required promoDetails keys</th></tr></thead>
-              <tbody>
-                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPO</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">TRTOD</td></tr>
-                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPOIP</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">INITD</td></tr>
-                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPOMNM</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">TRTOD, INITD</td></tr>
-                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>GCRP</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">INITD</td></tr>
-                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PAY4GET1</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">NUM_PAYMENT, PERCENT_OFF</td></tr>
-                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>HLFOFF_INT</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">USE_FREE_TIME, MAX_WEEKS, PERCENT_OFF</td></tr>
-                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PAYXSKIPY</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">NUM_PAYMENT, PERCENT_OFF</td></tr>
-                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>HLFOFF_NTR</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">PERCENT_OFF, MAX_DAYS</td></tr>
-                <tr style="background:var(--bg)"><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PIFEPOIPF</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">MAX_DAYS_OTHER, MAX_DAYS_MONTHLY, INITD</td></tr>
-                <tr><td style="padding:5px 10px;border-bottom:1px solid var(--border)"><code>PAYXTOY</code></td><td style="padding:5px 10px;border-bottom:1px solid var(--border)">DEF_CLUB_PAYMENT</td></tr>
-                <tr style="background:var(--bg)"><td style="padding:5px 10px"><code>PAYNFSTY+</code></td><td style="padding:5px 10px">DEF_CLUB_PAYMENT</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </details>
-
-        <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start">
-          <!-- Left: Create Promo Schedule -->
-          <div>
-            <div class="card">
-              <div class="card-title">&#128203; Create Promo Schedule</div>
-              <div class="form-row">
-                <div class="form-group"><label>Promo Group <span style="color:var(--error)">*</span></label>
-                  <input id="sndGroup" list="sndGroupList" placeholder="Select or type promo group…" autocomplete="off"/>
-                  <datalist id="sndGroupList"></datalist>
-                </div>
-                <div class="form-group"><label>Promo Type <span style="color:var(--error)">*</span></label>
-                  <input id="sndType" list="sndTypeList" placeholder="Select or type promo type code…" autocomplete="off"/>
-                  <datalist id="sndTypeList"></datalist>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group"><label>Promo Name <span style="color:var(--error)">*</span></label><input id="sndName" placeholder="e.g. 100 Off TRTO HISENSE"/></div>
-                <div class="form-group"><label>Promo Code <span style="color:var(--error)">*</span></label><input id="sndCode" placeholder="e.g. HISENSE100"/></div>
-              </div>
-              <div class="form-row">
-                <div class="form-group"><label>Start Date <span style="color:var(--error)">*</span></label><input id="sndStartDate" type="date"/></div>
-                <div class="form-group"><label>End Date <span style="color:var(--error)">*</span></label><input id="sndEndDate" type="date"/></div>
-              </div>
-              <!-- promoEnabled flags -->
-              <div class="form-row">
-                <div class="form-group"><label>Customer Order</label>
-                  <select id="sndCustOrder"><option value="Y">Y</option><option value="N">N</option></select></div>
-                <div class="form-group"><label>Ecomm</label>
-                  <select id="sndEcomm"><option value="Y">Y</option><option value="N">N</option></select></div>
-                <div class="form-group"><label>Online Only</label>
-                  <select id="sndOnlineOnly"><option value="N">N</option><option value="Y">Y</option></select></div>
-                <div class="form-group"><label>Promo Text Box</label>
-                  <select id="sndTextBox"><option value="Y">Y</option><option value="N">N</option></select></div>
-              </div>
-              <!-- promoConfig -->
-              <div style="margin:10px 0 6px;font-size:12px;font-weight:700;color:var(--text-sec);text-transform:uppercase;letter-spacing:.04em">&#9881; Promo Config <span style="font-weight:400;text-transform:none;color:var(--text-sec)">(leave blank if not needed)</span></div>
-              <div class="form-row">
-                <div class="form-group"><label>Promo Rate</label><input id="sndPromoRate" placeholder="e.g. 50.00"/></div>
-                <div class="form-group"><label>Due Date</label><input id="sndDueDate" type="date"/></div>
-                <div class="form-group"><label>Max Days Allowed</label><input id="sndMaxDays" placeholder="e.g. 30"/></div>
-              </div>
-              <div class="form-row">
-                <div class="form-group"><label>Free Time Days Allowed</label><input id="sndFreetimeDays" placeholder=""/></div>
-                <div class="form-group"><label># of Free Days</label><input id="sndNumFreeDays" placeholder=""/></div>
-                <div class="form-group"><label>Referral Promo Free Days</label><input id="sndReferralDays" placeholder=""/></div>
-              </div>
-              <!-- Text fields -->
-              <div class="form-group" style="margin-top:4px"><label>Reason for Promotion <span style="font-size:10px;color:var(--text-sec)">(max 50 chars)</span></label>
-                <input id="sndReason" placeholder="e.g. SIMS/ECOM/RACPAD" maxlength="50"/></div>
-              <div class="form-group"><label>Promo Description <span style="font-size:10px;color:var(--text-sec)">(max 250 chars)</span></label>
-                <textarea id="sndDesc" rows="2" placeholder='e.g. ^"Get $100 Off" offer is valid on a new Hisense agreement…' maxlength="250"></textarea></div>
-              <div class="form-group"><label>Promo Details Text <span style="font-size:10px;color:var(--text-sec)">(fine print — max 1024 chars)</span></label>
-                <textarea id="sndDetailsText" rows="3" placeholder="Full terms and conditions text…" maxlength="1024"></textarea></div>
-              <!-- Key/Value promoDetails -->
-              <div style="margin:10px 0 6px;font-size:12px;font-weight:700;color:var(--text-sec);text-transform:uppercase;letter-spacing:.04em">&#128196; Promo Details (Key / Value)</div>
-              <div id="sndDetailsRows">
-                <div class="form-row sndDetailRow" style="align-items:center">
-                  <div class="form-group"><label>Promo Key</label><input class="sndKey" placeholder="e.g. TRTOD"/></div>
-                  <div class="form-group"><label>Promo Value</label><input class="sndVal" placeholder="e.g. 100"/></div>
-                  <div style="padding-top:22px"><button class="btn btn-danger btn-sm" onclick="SendPromo.removeDetail(this)">&#10006;</button></div>
-                </div>
-              </div>
-              <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="SendPromo.addDetail()">&#43; Add Row</button>
-            </div>
-          </div>
-          <!-- Right: Assign Stores -->
-          <div>
-            <div class="card" style="position:sticky;top:16px">
-              <div class="card-title">&#127970; Assign Stores</div>
-              <div class="form-group">
-                <label>Store Numbers <span style="color:var(--error)">*</span><br/><span style="font-size:10px;color:var(--text-sec);font-weight:400">comma, space or newline separated</span></label>
-                <textarea id="sndStores" rows="14" placeholder="e.g. 00145&#10;00176&#10;07280" style="font-family:monospace;font-size:12px"></textarea>
-              </div>
-              <button class="btn btn-primary" style="width:100%;font-size:14px;padding:12px" onclick="SendPromo.build()">&#128270; Build Payload &amp; Preview</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── UPDATE sub-form ── -->
-      <div id="sndUpdForm" style="display:none">
+      <!-- ── UPDATE PROMOTION FORM ── -->
+      <div id="sndUpdForm">
         <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start">
           <div>
             <div class="card">
@@ -844,11 +722,9 @@ var Promotion = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
-   SendPromo — Build payload preview then send to Dev / QA API
-   Flow: build() → _renderPreview() → sendToApi() → _renderResponse()
+   SendPromo — Update promotion flow: buildUpdate() → _renderPreview() → sendToApi()
    ════════════════════════════════════════════════════════════════════════════ */
 var SendPromo = {
-  _subMode: 'add',
   _retryEnv: 'dev', _retryAuth: '', _retryAccess: '', _retryStoreHdr: '02202',
 
   _getEnv: function(){
@@ -857,102 +733,12 @@ var SendPromo = {
     return 'dev';
   },
   _esc: function(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');},
-
-  /* ── Load Promo Group & Type dropdowns from hierarchy API ─────────────── */
-  loadDropdowns: async function(){
-    var env=SendPromo._getEnv();
-    var authToken=$('sndAuthToken').value.trim(), accessToken=$('sndAccessToken').value.trim();
-    var storeHdr=$('sndStoreHdr').value.trim()||'02202';
-    if(!authToken||!accessToken){toast('Paste both tokens first to load dropdowns','error');return;}
-    var statusEl=$('dropdownStatus');
-    statusEl.textContent='Loading\u2026';
-    var btn=$('btnLoadDropdowns');btn.disabled=true;
-    var r=await api('POST','/api/promotion/fetch-hierarchy',{env:env,auth_token:authToken,access_token:accessToken,store_number_header:storeHdr});
-    btn.disabled=false;
-    if(!r.ok){statusEl.style.color='var(--error)';statusEl.textContent='\u274c '+(r.data.error||'Failed');toast(r.data.error||'Failed to load dropdowns','error');return;}
-    var d=r.data;
-    // Populate Promo Group datalist — show only promotionGroupName, value = name
-    var grpList=$('sndGroupList');
-    grpList.innerHTML='';
-    d.promo_groups.forEach(function(g){
-      var opt=document.createElement('option');
-      opt.value=g.name;
-      grpList.appendChild(opt);
-    });
-    // Populate Promo Type datalist — show only referenceCode, value = code
-    var typList=$('sndTypeList');
-    typList.innerHTML='';
-    d.promo_types.forEach(function(t){
-      var opt=document.createElement('option');
-      opt.value=t.code;
-      typList.appendChild(opt);
-    });
-    statusEl.style.color='var(--success)';
-    statusEl.textContent='\u2705 Loaded '+d.promo_groups.length+' groups, '+d.promo_types.length+' types from '+env.toUpperCase();
-    toast('Dropdowns loaded from '+env.toUpperCase(),'success');
-  },
-
-  setSubMode: function(mode){
-    SendPromo._subMode=mode;
-    if($('sndResult'))$('sndResult').innerHTML='';
-    var isAdd=mode==='add';
-    $('sndAddForm').style.display =isAdd?'':'none';
-    $('sndUpdForm').style.display =isAdd?'none':'';
-    function tab(el,active){el.style.background=active?'var(--accent)':'var(--bg)';el.style.color=active?'#fff':'var(--text)';}
-    tab($('sndTabAdd'),isAdd);tab($('sndTabUpdate'),!isAdd);
-  },
-
-  addDetail:function(){
-    var row=document.createElement('div');row.className='form-row sndDetailRow';row.style.alignItems='center';
-    row.innerHTML='<div class="form-group"><label>Promo Key</label><input class="sndKey" placeholder="e.g. TRTOD"/></div><div class="form-group"><label>Promo Value</label><input class="sndVal" placeholder="e.g. 100"/></div><div style="padding-top:22px"><button class="btn btn-danger btn-sm" onclick="SendPromo.removeDetail(this)">&#10006;</button></div>';
-    $('sndDetailsRows').appendChild(row);
-  },
-  removeDetail:function(btn){var row=btn.closest('.sndDetailRow');if(row)row.remove();},
-  _getDetails:function(){
-    var rows=document.querySelectorAll('.sndDetailRow'),details=[];
-    rows.forEach(function(r){var k=(r.querySelector('.sndKey')||{}).value||'';var v=(r.querySelector('.sndVal')||{}).value||'';if(k.trim())details.push({promoKey:k.trim(),promoValue:v.trim()});});
-    return details;
-  },
   _validate:function(fields){
     for(var i=0;i<fields.length;i++){if(!fields[i][0]){toast(fields[i][1],'error');return false;}}
     return true;
   },
 
-  /* ── STEP 1: Build — calls proxy-build, shows preview ─────────────────── */
-  build: async function(){
-    var env=SendPromo._getEnv(), authToken=$('sndAuthToken').value.trim(), accessToken=$('sndAccessToken').value.trim();
-    var storeHdr=$('sndStoreHdr').value.trim()||'02202', stores=$('sndStores').value.trim(), endDate=$('sndEndDate').value.trim();
-    if(!SendPromo._validate([
-      [stores,'Enter at least one store number'],[endDate,'Enter End Date'],
-      [$('sndGroup').value.trim(),'Enter Promo Group'],[$('sndType').value.trim(),'Enter Promo Type'],
-      [$('sndName').value.trim(),'Enter Promo Name'],[$('sndCode').value.trim(),'Enter Promo Code']
-    ]))return;  // auth fields are optional
-
-    SendPromo._retryEnv=env;SendPromo._retryAuth=authToken;SendPromo._retryAccess=accessToken;SendPromo._retryStoreHdr=storeHdr;
-    $('sndResult').innerHTML='<div style="padding:24px;text-align:center"><span class="spinner"></span> Looking up organizations &amp; building payload…</div>';
-
-    var promoConfig={
-      promoRate:$('sndPromoRate').value.trim(), dueDate:$('sndDueDate').value.trim(),
-      maxDaysAllowed:$('sndMaxDays').value.trim(), freeTimeDaysAllowed:$('sndFreetimeDays').value.trim(),
-      numberOfFreeDays:$('sndNumFreeDays').value.trim(), referralPromoFreeDays:$('sndReferralDays').value.trim()
-    };
-    var body={
-      action:'add', store_numbers:stores,
-      promoGroup:$('sndGroup').value.trim(), promoType:$('sndType').value.trim(),
-      promoName:$('sndName').value.trim(), promoCode:$('sndCode').value.trim(),
-      startDate:$('sndStartDate').value.trim(), endDate:endDate,
-      promoConfig:promoConfig, promoDetails:SendPromo._getDetails(),
-      promoReason:$('sndReason').value.trim(), promoDesc:$('sndDesc').value.trim(),
-      promoDetailsText:$('sndDetailsText').value.trim(),
-      promoEnabled:{customerOrderEnabled:$('sndCustOrder').value,ecommEnabled:$('sndEcomm').value,
-                    onlineOnlyEnabled:$('sndOnlineOnly').value,promoTextBoxEnabled:$('sndTextBox').value},
-      hierarchyType:'STORE'
-    };
-    var r=await api('POST','/api/promotion/proxy-build',body);
-    if(!r.ok){$('sndResult').innerHTML='<div class="alert alert-error" style="margin-top:16px">&#10060; '+(r.data.error||'Build failed')+'</div>';return;}
-    SendPromo._renderPreview(r.data,env);
-  },
-
+  /* ── Build — calls proxy-build, shows preview ─────────────────────────── */
   buildUpdate: async function(){
     var env=SendPromo._getEnv(), authToken=$('sndAuthToken').value.trim(), accessToken=$('sndAccessToken').value.trim();
     var storeHdr=$('sndStoreHdr').value.trim()||'02202', stores=$('sndUpdStores').value.trim();
