@@ -12,6 +12,12 @@ echo Activating virtual environment and installing requirements...
 .venv\Scripts\pip.exe install --upgrade pip
 if exist requirements.txt (
   .venv\Scripts\pip.exe install -r requirements.txt
+  if errorlevel 1 (
+    echo ERROR: Failed to install one or more dependencies.
+    echo Check your internet connection and the contents of requirements.txt.
+    pause
+    exit /b 1
+  )
 ) else (
   echo requirements.txt not found, skipping dependency install.
 )
