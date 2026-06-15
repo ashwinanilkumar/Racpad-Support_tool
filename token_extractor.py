@@ -76,7 +76,7 @@ class _TokenSession:
     """Holds the state of a single token-extraction session."""
 
     def __init__(self):
-        self.lock = threading.RLock()  # Reentrant — same thread can re-acquire while holding it
+        self.lock = threading.RLock()  # Reentrant â€” same thread can re-acquire while holding it
         self.status = "idle"  # idle | browser_open | extracting | done | error
         self.tokens = None
         self.error = None
