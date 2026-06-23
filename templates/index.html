@@ -89,6 +89,24 @@ tr:hover td{background:var(--accent-light)}
 .download-bar-label{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;display:flex;align-items:center;gap:6px}
 .download-btn-group{display:flex;gap:6px}
 .download-bar-hint{font-size:11px;color:var(--text-sec);margin-left:auto;white-space:nowrap}
+/* ── Hierarchy Browser (App Config) ── */
+.section-divider{display:flex;align-items:center;gap:12px;margin:28px 0 18px}
+.section-divider-line{flex:1;height:1px;background:var(--border)}
+.section-divider-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-sec);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.browser-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.browser-card-header{padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.browser-card-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.browser-card-desc{font-size:12px;color:var(--text-sec)}
+.browser-card-body{padding:16px 22px 20px}
+.browser-pills{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
+.cfg-pill{display:inline-flex;align-items:center;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--border);color:var(--text-sec);background:var(--bg);transition:all .15s;user-select:none;letter-spacing:.2px}
+.cfg-pill:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+.cfg-pill.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px rgba(99,102,241,.25)}
+.browser-empty-state{text-align:center;padding:32px 16px;color:var(--text-sec);font-size:13px}
+.browser-empty-icon{font-size:32px;margin-bottom:8px;opacity:.4}
+.browser-result-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.browser-result-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+.browser-result-count{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--accent-light);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -130,7 +148,10 @@ tr:hover td{background:var(--accent-light)}
   <!-- ── App Config Triage ── -->
   <div class="page" id="page-appconfig">
     <h1 class="page-title">App Config Triage</h1>
-    <p class="page-desc">Look up configuration rules across the hierarchy (ConfigDB — configadm schema).</p>
+    <p class="page-desc">Look up configuration rules and browse active organizational hierarchy entities (ConfigDB — configadm schema).</p>
+
+    <!-- ── Section 1: Config Rule Lookup ── -->
+    <div class="section-divider"><span class="section-divider-label">&#128270; Config Rule Lookup</span><div class="section-divider-line"></div></div>
     <div class="card">
       <div class="form-group"><label>Rule Name</label><input id="cfgRuleName" placeholder="e.g. SameAsCashDays"/></div>
       <div class="form-row">
@@ -155,6 +176,33 @@ tr:hover td{background:var(--accent-light)}
     <div id="cfgHierarchyChain" style="display:none;margin-bottom:16px"></div>
     <div id="cfgResult"></div>
     <div id="cfgDiffPanel" style="display:none"></div>
+
+    <!-- ── Section 2: Active Hierarchy Browser ── -->
+    <div class="section-divider" style="margin-top:36px"><span class="section-divider-label">&#128202; Active Hierarchy Browser</span><div class="section-divider-line"></div></div>
+    <div class="browser-card">
+      <div class="browser-card-header">
+        <div>
+          <div class="browser-card-title">&#128218; Browse Active Entities</div>
+          <div class="browser-card-desc">View and download all active stores, districts, regions, states, companies, countries and LOBs from the ConfigDB association table. Click any type to load instantly.</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="AppConfig.downloadScopeList('ALL')" title="Export all hierarchy types (Store, District, Region, State, Company, Country, LOB) into one CSV file" style="white-space:nowrap;flex-shrink:0">&#11015; Export All Types</button>
+      </div>
+      <div class="browser-card-body">
+        <div class="browser-pills" id="cfgBrowserPills">
+          <span class="cfg-pill active" data-type="STORE"  onclick="AppConfig.selectBrowserType('STORE')">&#127978; Store</span>
+          <span class="cfg-pill" data-type="DISTRICT" onclick="AppConfig.selectBrowserType('DISTRICT')">&#127968; District</span>
+          <span class="cfg-pill" data-type="REGION"   onclick="AppConfig.selectBrowserType('REGION')">&#128506; Region</span>
+          <span class="cfg-pill" data-type="STATE"    onclick="AppConfig.selectBrowserType('STATE')">&#127987; State</span>
+          <span class="cfg-pill" data-type="COMPANY"  onclick="AppConfig.selectBrowserType('COMPANY')">&#127970; Company</span>
+          <span class="cfg-pill" data-type="COUNTRY"  onclick="AppConfig.selectBrowserType('COUNTRY')">&#127758; Country</span>
+          <span class="cfg-pill" data-type="LOB"      onclick="AppConfig.selectBrowserType('LOB')">&#127981; LOB</span>
+        </div>
+        <div id="cfgBrowserResult">
+          <div class="browser-empty-state"><div class="browser-empty-icon">&#128202;</div><div>Select a hierarchy type above to browse active entries.</div></div>
+        </div>
+      </div>
+    </div>
+
   </div>
   <div class="page" id="page-payment">
     <h1 class="page-title">Customer Payment</h1>
@@ -388,6 +436,74 @@ var AppConfig={
     var blob=new Blob([lines.join('\n')],{type:'text/csv'});
     var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='appconfig_export.csv';a.click();
     toast('CSV exported','success');
+  },
+  // ── Scope-list helpers ──────────────────────────────────────────────────────
+  _browserType:'STORE',
+  _scopeListRows:null,
+  // Select a browser pill and load its data.
+  selectBrowserType:function(type){
+    AppConfig._browserType=type;
+    // Update pill highlight
+    document.querySelectorAll('#cfgBrowserPills .cfg-pill').forEach(function(p){
+      p.classList.toggle('active',p.dataset.type===type);
+    });
+    AppConfig.viewScopeList();
+  },
+  // Fetch all active associations for a hierarchy type (or 'ALL') from the server.
+  _fetchScopeList:async function(scopeType){
+    var body=scopeType&&scopeType!=='ALL'?{scope_type:scopeType}:{scope_type:'ALL'};
+    var r=await api('POST','/api/appconfig/scopes',body);
+    if(!r.ok){toast((r.data&&r.data.error)||'Failed to load scope list','error');return null}
+    return r.data.rows||[];
+  },
+  // Build and trigger a CSV download for a set of scope rows.
+  _downloadScopeListCSV:function(rows,filename){
+    if(!rows||!rows.length){toast('No data to download','error');return}
+    var cols=['code','name','description','hierarchy_type'];
+    var headers=['Code','Name','Description','Hierarchy Type'];
+    var lines=[headers.join(',')];
+    rows.forEach(function(r){
+      var vals=cols.map(function(c){
+        var raw=r[c];
+        // Treat literal 'undefined'/'Undefined' from DB the same as null
+        if(c==='description'&&raw&&String(raw).toLowerCase()==='undefined')raw=null;
+        var v=(raw!=null?String(raw):'');
+        if(v.indexOf(',')>=0||v.indexOf('"')>=0||v.indexOf('\n')>=0)v='"'+v.replace(/"/g,'""')+'"';
+        return v;
+      });
+      lines.push(vals.join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename||'scopes_export.csv';a.click();URL.revokeObjectURL(a.href);
+    toast('CSV downloaded ('+rows.length+' rows)','success');
+  },
+  // Load and display active list for the current browser type in the browser section.
+  viewScopeList:async function(){
+    var st=AppConfig._browserType||'STORE';
+    var panel=$('cfgBrowserResult');
+    panel.innerHTML='<div style="padding:24px;text-align:center"><span class="spinner"></span><div style="margin-top:10px;font-size:13px;color:var(--text-sec)">Loading '+AppConfig._esc(st)+' list…</div></div>';
+    var rows=await AppConfig._fetchScopeList(st);
+    if(!rows){panel.innerHTML='<div class="alert alert-error">Failed to load list.</div>';return}
+    if(!rows.length){panel.innerHTML='<div class="alert alert-info">No entries found for <strong>'+AppConfig._esc(st)+'</strong>.</div>';return}
+    AppConfig._scopeListRows=rows;
+    var today=new Date().toISOString().slice(0,10);
+    var html='<div class="browser-result-header">';
+    html+='<div class="browser-result-title"><span style="font-size:16px">&#128203;</span> Active <strong>'+AppConfig._esc(st)+'</strong> <span class="browser-result-count">'+rows.length+' entries</span></div>';
+    html+='<button class="btn btn-secondary btn-sm" onclick="AppConfig._downloadScopeListCSV(AppConfig._scopeListRows,\'scopes_'+AppConfig._esc(st)+'_'+today+'.csv\')">&#11015; Download CSV</button>';
+    html+='</div>';
+    html+='<div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Type</th></tr></thead><tbody>';
+    rows.forEach(function(r){
+      var _desc=r.description&&r.description.toLowerCase()!=='undefined'?r.description:null;
+      html+='<tr><td><code>'+AppConfig._esc(r.code||'')+'</code></td><td>'+AppConfig._esc(r.name||'')+'</td><td>'+(_desc?AppConfig._esc(_desc):'<span style="color:var(--text-sec)">—</span>')+'</td><td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--accent-light);color:var(--accent)">'+AppConfig._esc(r.hierarchy_type||'')+'</span></td></tr>';
+    });
+    html+='</tbody></table></div>';
+    panel.innerHTML=html;
+  },
+  // Fetch + immediately download CSV for the given scope type (or ALL).
+  downloadScopeList:async function(forceType){
+    var st=forceType||AppConfig._browserType||'STORE';
+    var rows=await AppConfig._fetchScopeList(st);
+    if(rows)AppConfig._downloadScopeListCSV(rows,'scopes_'+st+'_'+new Date().toISOString().slice(0,10)+'.csv');
   },
   _esc:function(s){if(s==null)return'—';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 };

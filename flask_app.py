@@ -768,6 +768,54 @@ def api_appconfig_history():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/appconfig/scopes", methods=["POST"])
+def api_appconfig_scopes():
+    """
+    Return a list of all active associations for a given hierarchy type,
+    or all types when scope_type is omitted / 'ALL'.
+
+    Request body (JSON):
+        { "scope_type": "STORE" }   → single type
+        { }  or  { "scope_type": "ALL" }  → all types (STORE, DISTRICT, …)
+
+    Response:
+        { "rows": [...], "scope_type": "STORE" | "ALL" }
+    """
+    from queries_config import QUERY_LIST_BY_TYPE, QUERY_LIST_ALL, SCOPE_LIST_ALLOWED
+
+    data = request.json or {}
+    scope_type = (data.get("scope_type") or "").strip().upper()
+
+    if scope_type and scope_type != "ALL" and scope_type not in SCOPE_LIST_ALLOWED:
+        return jsonify({"error": f"Unsupported scope type: {scope_type}. "
+                                  f"Allowed: {', '.join(sorted(SCOPE_LIST_ALLOWED))}"}), 400
+
+    try:
+        conn = get_config_connection()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+    try:
+        if scope_type and scope_type != "ALL":
+            rows = execute_query(conn, QUERY_LIST_BY_TYPE, {"scope_type": scope_type})
+        else:
+            rows = execute_query(conn, QUERY_LIST_ALL, {})
+
+        # Serialize any datetime/date objects
+        for row in rows:
+            for k, v in list(row.items()):
+                if hasattr(v, "isoformat"):
+                    row[k] = v.isoformat()
+
+        return jsonify({"rows": rows, "scope_type": scope_type or "ALL"})
+
+    except Exception as e:
+        return jsonify({"error": f"Query failed: {e}",
+                        "traceback": traceback.format_exc()}), 500
+    finally:
+        conn.close()
+
+
 # ── Entry ─────────────────────────────────────────────────────────────────────
 
 # ── Customer Payment ──────────────────────────────────────────────────────────
