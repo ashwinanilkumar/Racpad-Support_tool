@@ -8,7 +8,7 @@ Run:
 """
 
 from datetime import date
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 import pytest
 
@@ -60,34 +60,71 @@ SAMPLE_STORE_ZONES = [
 ]
 
 SAMPLE_PRICES_ALL = [
-    {"rms_item_number": 55001, "zone_id": 10, "zone_number": "Z1",
-     "pricing_type": "PERMANENT", "weekly_rate_new": 25.99,
-     "weekly_rate_used": 19.99, "term": 78, "cash_price_multiplier": 2.0,
-     "forced_cash_price": None, "turn": None, "is_complete": True},
-    {"rms_item_number": 55002, "zone_id": 10, "zone_number": "Z1",
-     "pricing_type": "PERMANENT", "weekly_rate_new": 15.99,
-     "weekly_rate_used": 11.99, "term": 78, "cash_price_multiplier": 2.0,
-     "forced_cash_price": None, "turn": None, "is_complete": True},
+    {"rms_item_number": 55001, "zone_id": 10, "is_complete": True},
+    {"rms_item_number": 55002, "zone_id": 10, "is_complete": True},
 ]
 
 SAMPLE_PRICES_MISSING_ONE = [
-    {"rms_item_number": 55001, "zone_id": 10, "zone_number": "Z1",
-     "pricing_type": "PERMANENT", "weekly_rate_new": 25.99,
-     "weekly_rate_used": 19.99, "term": 78, "cash_price_multiplier": 2.0,
-     "forced_cash_price": None, "turn": None, "is_complete": True},
+    {"rms_item_number": 55001, "zone_id": 10, "is_complete": True},
     # Item 55002 is MISSING → gap
 ]
 
 SAMPLE_PRICES_INCOMPLETE = [
-    {"rms_item_number": 55001, "zone_id": 10, "zone_number": "Z1",
-     "pricing_type": "PERMANENT", "weekly_rate_new": 25.99,
-     "weekly_rate_used": 19.99, "term": 78, "cash_price_multiplier": 2.0,
-     "forced_cash_price": None, "turn": None, "is_complete": True},
-    {"rms_item_number": 55002, "zone_id": 10, "zone_number": "Z1",
-     "pricing_type": "PERMANENT", "weekly_rate_new": 15.99,
-     "weekly_rate_used": None, "term": None, "cash_price_multiplier": None,
-     "forced_cash_price": None, "turn": None, "is_complete": False},
+    {"rms_item_number": 55001, "zone_id": 10, "is_complete": True},
+    {"rms_item_number": 55002, "zone_id": 10, "is_complete": False},
 ]
+
+# Hierarchy resolve result for both items
+SAMPLE_HIERARCHY_RESOLVE = [
+    {"rms_item_master_id": 1001, "rms_item_number": 55001,
+     "rms_bracket_id": 201, "rms_subdepartment_id": 301, "rms_department_id": 401},
+    {"rms_item_master_id": 1002, "rms_item_number": 55002,
+     "rms_bracket_id": 201, "rms_subdepartment_id": 301, "rms_department_id": 401},
+]
+
+
+def _make_fetch_side_effect(step1, step2, step3a_results, hierarchy_resolve, level_results=None):
+    """
+    Build a side_effect function for _fetch that dispatches based on the SQL query.
+    This handles the new two-phase 3b architecture where _fetch is called multiple
+    times with different queries.
+
+    level_results: list of results for L1, L2, L3, L4 queries (default: empty for all)
+    """
+    from queries import (
+        PRICING_VALIDATION_PO_ITEMS,
+        PRICING_VALIDATION_STORE_ZONES,
+        PRICING_VALIDATION_EXISTING_PRICES,
+        PRICING_VALIDATION_HIERARCHY_RESOLVE,
+        PRICING_VALIDATION_HIERARCHY_L1_ITEM,
+        PRICING_VALIDATION_HIERARCHY_L2_BRACKET,
+        PRICING_VALIDATION_HIERARCHY_L3_SUBDEPT,
+        PRICING_VALIDATION_HIERARCHY_L4_DEPT,
+    )
+    if level_results is None:
+        level_results = [[], [], [], []]
+
+    def _side_effect(conn, sql, params):
+        sql_stripped = sql.strip()
+        if sql_stripped == PRICING_VALIDATION_PO_ITEMS.strip():
+            return step1
+        elif sql_stripped == PRICING_VALIDATION_STORE_ZONES.strip():
+            return step2
+        elif sql_stripped == PRICING_VALIDATION_EXISTING_PRICES.strip():
+            return step3a_results
+        elif sql_stripped == PRICING_VALIDATION_HIERARCHY_RESOLVE.strip():
+            return hierarchy_resolve
+        elif sql_stripped == PRICING_VALIDATION_HIERARCHY_L1_ITEM.strip():
+            return level_results[0]
+        elif sql_stripped == PRICING_VALIDATION_HIERARCHY_L2_BRACKET.strip():
+            return level_results[1]
+        elif sql_stripped == PRICING_VALIDATION_HIERARCHY_L3_SUBDEPT.strip():
+            return level_results[2]
+        elif sql_stripped == PRICING_VALIDATION_HIERARCHY_L4_DEPT.strip():
+            return level_results[3]
+        return []
+
+    return _side_effect
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +136,12 @@ SAMPLE_PRICES_INCOMPLETE = [
 def test_no_gaps_when_all_priced(mock_fetch, mock_connect):
     """All items have pricing → empty list returned."""
     mock_connect.return_value = MagicMock()
-    mock_fetch.side_effect = [
-        SAMPLE_PO_ITEMS,       # Step 1: PO items
-        SAMPLE_STORE_ZONES,    # Step 2: store zones
-        SAMPLE_PRICES_ALL,     # Step 3a: item_price
-        [],                    # Step 3b: item_price_hierarchy
-    ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=SAMPLE_PO_ITEMS,
+        step2=SAMPLE_STORE_ZONES,
+        step3a_results=SAMPLE_PRICES_ALL,
+        hierarchy_resolve=SAMPLE_HIERARCHY_RESOLVE,
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),
@@ -119,12 +156,12 @@ def test_no_gaps_when_all_priced(mock_fetch, mock_connect):
 def test_gap_detected_for_missing_item(mock_fetch, mock_connect):
     """Item 55002 has no item_price record → 1 MISSING gap."""
     mock_connect.return_value = MagicMock()
-    mock_fetch.side_effect = [
-        SAMPLE_PO_ITEMS,           # Step 1
-        SAMPLE_STORE_ZONES,        # Step 2
-        SAMPLE_PRICES_MISSING_ONE, # Step 3a (missing item 55002)
-        [],                        # Step 3b: hierarchy (also missing)
-    ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=SAMPLE_PO_ITEMS,
+        step2=SAMPLE_STORE_ZONES,
+        step3a_results=SAMPLE_PRICES_MISSING_ONE,
+        hierarchy_resolve=SAMPLE_HIERARCHY_RESOLVE,
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),
@@ -142,12 +179,12 @@ def test_gap_detected_for_missing_item(mock_fetch, mock_connect):
 def test_gap_detected_for_incomplete_item(mock_fetch, mock_connect):
     """Item 55002 has item_price but required fields are NULL → INCOMPLETE gap."""
     mock_connect.return_value = MagicMock()
-    mock_fetch.side_effect = [
-        SAMPLE_PO_ITEMS,          # Step 1
-        SAMPLE_STORE_ZONES,       # Step 2
-        SAMPLE_PRICES_INCOMPLETE, # Step 3a (item 55002 incomplete)
-        [],                       # Step 3b: hierarchy (also not priced)
-    ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=SAMPLE_PO_ITEMS,
+        step2=SAMPLE_STORE_ZONES,
+        step3a_results=SAMPLE_PRICES_INCOMPLETE,
+        hierarchy_resolve=SAMPLE_HIERARCHY_RESOLVE,
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),
@@ -164,9 +201,12 @@ def test_gap_detected_for_incomplete_item(mock_fetch, mock_connect):
 def test_no_po_items_returns_empty(mock_fetch, mock_connect):
     """No PO items on check_date → empty list."""
     mock_connect.return_value = MagicMock()
-    mock_fetch.side_effect = [
-        [],  # Step 1: no items
-    ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=[],
+        step2=[],
+        step3a_results=[],
+        hierarchy_resolve=[],
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),
@@ -181,10 +221,12 @@ def test_no_po_items_returns_empty(mock_fetch, mock_connect):
 def test_no_zone_assigned(mock_fetch, mock_connect):
     """Store has no zone → gap with 'No pricing zone assigned' reason."""
     mock_connect.return_value = MagicMock()
-    mock_fetch.side_effect = [
-        SAMPLE_PO_ITEMS,  # Step 1
-        [],               # Step 2: no zones
-    ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=SAMPLE_PO_ITEMS,
+        step2=[],  # No zones
+        step3a_results=[],
+        hierarchy_resolve=[],
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),
@@ -200,13 +242,12 @@ def test_no_zone_assigned(mock_fetch, mock_connect):
 def test_store_filter_applied(mock_fetch, mock_connect):
     """Filter by store is pushed to SQL; mock simulates DB returning only that store."""
     mock_connect.return_value = MagicMock()
-    # Simulate the DB already filtering to only store 02714
-    mock_fetch.side_effect = [
-        SAMPLE_PO_ITEMS,       # Step 1: DB returns only store 02714 items
-        SAMPLE_STORE_ZONES,    # Step 2
-        SAMPLE_PRICES_ALL,     # Step 3a
-        [],                    # Step 3b
-    ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=SAMPLE_PO_ITEMS,
+        step2=SAMPLE_STORE_ZONES,
+        step3a_results=SAMPLE_PRICES_ALL,
+        hierarchy_resolve=SAMPLE_HIERARCHY_RESOLVE,
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),
@@ -214,7 +255,6 @@ def test_store_filter_applied(mock_fetch, mock_connect):
         filters={"store": "02714"},
     )
 
-    # All items priced → no gaps
     assert gaps == []
 
 
@@ -223,17 +263,18 @@ def test_store_filter_applied(mock_fetch, mock_connect):
 def test_hierarchy_covers_missing_item_price(mock_fetch, mock_connect):
     """Item 55002 missing from item_price but present in hierarchy → NOT a gap."""
     mock_connect.return_value = MagicMock()
-    hierarchy_row_55002 = {
-        "rms_item_number": 55002,
-        "zone_id": 10,
-        "is_complete": True,
-    }
-    mock_fetch.side_effect = [
-        SAMPLE_PO_ITEMS,           # Step 1
-        SAMPLE_STORE_ZONES,        # Step 2
-        SAMPLE_PRICES_MISSING_ONE, # Step 3a: item_price (55002 missing)
-        [hierarchy_row_55002],     # Step 3b: hierarchy covers it
+    # L1 (item level) returns pricing for item 55002 via its rms_item_master_id=1002
+    l1_result = [
+        {"entity_id": 1002, "zone_id": 10,
+         "key_names": ["WeeklyRateNew", "WeeklyRateUsed", "WeeklyTerm", "CashPriceMultiplier"]},
     ]
+    mock_fetch.side_effect = _make_fetch_side_effect(
+        step1=SAMPLE_PO_ITEMS,
+        step2=SAMPLE_STORE_ZONES,
+        step3a_results=SAMPLE_PRICES_MISSING_ONE,
+        hierarchy_resolve=SAMPLE_HIERARCHY_RESOLVE,
+        level_results=[l1_result, [], [], []],
+    )
 
     gaps = find_pricing_gaps(
         check_date=date(2026, 6, 30),

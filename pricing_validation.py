@@ -25,13 +25,18 @@ from datetime import date
 from typing import Optional
 
 import psycopg2
+import psycopg2.errors
 import psycopg2.extras
 
 from queries import (
     PRICING_VALIDATION_PO_ITEMS,
     PRICING_VALIDATION_STORE_ZONES,
     PRICING_VALIDATION_EXISTING_PRICES,
-    PRICING_VALIDATION_HIERARCHY_PRICES,
+    PRICING_VALIDATION_HIERARCHY_RESOLVE,
+    PRICING_VALIDATION_HIERARCHY_L1_ITEM,
+    PRICING_VALIDATION_HIERARCHY_L2_BRACKET,
+    PRICING_VALIDATION_HIERARCHY_L3_SUBDEPT,
+    PRICING_VALIDATION_HIERARCHY_L4_DEPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,8 +46,17 @@ logger = logging.getLogger(__name__)
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-# Per-statement timeout (seconds) — prevents queries from hanging indefinitely
-STATEMENT_TIMEOUT_S = 180
+# Per-statement timeout (seconds) — applies per batch, not globally.
+# Small batches should complete in <30s; this is a safety net.
+STATEMENT_TIMEOUT_S = 90
+
+# Batch sizes tuned for production safety:
+#   - 3a (item_price): simpler query, can handle more items per batch
+#   - 3b resolve: just resolving hierarchy IDs, very fast
+#   - 3b levels: each level query is focused on one FK, small batches
+BATCH_SIZE_3A = 100
+BATCH_SIZE_3B_RESOLVE = 200
+BATCH_SIZE_3B_LEVEL = 100
 
 def _connect(config: dict, label: str):
     """Open a read-only psycopg2 connection from a config dict."""
@@ -68,6 +82,35 @@ def _fetch(conn, sql: str, params: dict) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
         return [dict(row) for row in cur.fetchall()]
+
+
+def _batched(lst, size):
+    """Yield successive chunks of `lst` of length `size`."""
+    for i in range(0, len(lst), size):
+        yield lst[i:i + size]
+
+
+def _fetch_with_retry(conn, sql, params, array_key, batch_label="batch", max_retries=2):
+    """
+    Execute a query; on statement timeout, halve the array param and retry.
+    This adaptive approach handles unexpectedly heavy item sets gracefully.
+    """
+    try:
+        return _fetch(conn, sql, params)
+    except psycopg2.errors.QueryCanceled:
+        arr = params[array_key]
+        if len(arr) <= 5 or max_retries <= 0:
+            raise  # Cannot split further — genuine performance problem
+        mid = len(arr) // 2
+        logger.warning("%s timed out with %d items — splitting in half and retrying",
+                       batch_label, len(arr))
+        left_params = {**params, array_key: arr[:mid]}
+        right_params = {**params, array_key: arr[mid:]}
+        left = _fetch_with_retry(conn, sql, left_params, array_key,
+                                 f"{batch_label}L", max_retries - 1)
+        right = _fetch_with_retry(conn, sql, right_params, array_key,
+                                  f"{batch_label}R", max_retries - 1)
+        return left + right
 
 
 # ---------------------------------------------------------------------------
@@ -192,54 +235,111 @@ def find_pricing_gaps(
         #   3a. item_price (PERMANENT/TEMPORARY/MANUAL, direct column values)
         #   3b. item_price_hierarchy + pricing_param_value (RACPad pricing screen)
         #
-        # Optimization: run both queries in parallel using ThreadPoolExecutor,
-        # and Step 3a uses zone_ids as TEXT (avoids regex+cast on VARCHAR column).
-        # For large datasets, items are batched to keep ANY() arrays reasonable.
+        # Architecture (production-safe):
+        #   - Micro-batches to keep each SQL statement fast (<30s target)
+        #   - Adaptive retry: if a batch times out, it's halved automatically
+        #   - 3b split into two phases (resolve hierarchy IDs, then 4 level queries)
+        #   - 3a and 3b run in parallel via ThreadPoolExecutor
         logger.info("Step 3/3: Checking item_price + item_price_hierarchy for %d item(s) × %d zone(s)",
                     len(unique_item_numbers), len(all_zone_ids))
 
         # Convert zone_ids to text for Step 3a (matches VARCHAR column directly)
         zone_ids_text = [str(z) for z in all_zone_ids]
 
-        # Batch sizes — 3b uses a smaller batch because the UNION ALL CTE is heavier
-        BATCH_SIZE_3A = 500
-        BATCH_SIZE_3B = 200
-
-        def _batched(lst, size):
-            for i in range(0, len(lst), size):
-                yield lst[i:i + size]
-
+        # ── 3a: item_price (direct column-based pricing) ──────────────────────
         def _run_3a():
             t0 = time.monotonic()
-            _progress(3, "running", f"3a — querying item_price for {len(unique_item_numbers)} item(s)…")
+            _progress(3, "running", f"3a — querying item_price ({len(unique_item_numbers)} items, batches of {BATCH_SIZE_3A})…")
             results = []
             batches = list(_batched(unique_item_numbers, BATCH_SIZE_3A))
             for idx, batch in enumerate(batches, 1):
-                if len(batches) > 1:
-                    _progress(3, "running", f"3a — item_price batch {idx}/{len(batches)} ({len(batch)} items)…")
-                results.extend(_fetch(prc_conn, PRICING_VALIDATION_EXISTING_PRICES, {
-                    "rms_item_numbers": batch,
-                    "zone_ids_text": zone_ids_text,
-                }))
+                _progress(3, "running", f"3a — batch {idx}/{len(batches)} ({len(batch)} items)…")
+                results.extend(_fetch_with_retry(
+                    prc_conn, PRICING_VALIDATION_EXISTING_PRICES,
+                    {"rms_item_numbers": batch, "zone_ids_text": zone_ids_text},
+                    array_key="rms_item_numbers",
+                    batch_label=f"3a-batch{idx}",
+                ))
             elapsed = time.monotonic() - t0
             logger.info("Step 3a done: %d rows in %.1fs", len(results), elapsed)
-            _progress(3, "running", f"3a done — {len(results)} row(s) in {elapsed:.1f}s. Waiting for 3b…")
+            _progress(3, "running", f"3a done — {len(results)} row(s) in {elapsed:.1f}s.")
             return results
 
+        # ── 3b: hierarchy pricing (two-phase approach) ─────────────────────────
         def _run_3b():
             t0 = time.monotonic()
-            _progress(3, "running", f"3b — querying item_price_hierarchy for {len(unique_item_numbers)} item(s)…")
             conn_3b = _connect(db_configs["prcdb"], "prcdb")
             try:
-                results = []
-                batches = list(_batched(unique_item_numbers, BATCH_SIZE_3B))
-                for idx, batch in enumerate(batches, 1):
-                    if len(batches) > 1:
-                        _progress(3, "running", f"3b — hierarchy batch {idx}/{len(batches)} ({len(batch)} items)…")
-                    results.extend(_fetch(conn_3b, PRICING_VALIDATION_HIERARCHY_PRICES, {
+                # Phase 1: Resolve item hierarchy IDs (lightweight)
+                _progress(3, "running", "3b — resolving item hierarchy chain…")
+                hierarchy_rows_raw = []
+                for batch in _batched(unique_item_numbers, BATCH_SIZE_3B_RESOLVE):
+                    hierarchy_rows_raw.extend(_fetch(conn_3b, PRICING_VALIDATION_HIERARCHY_RESOLVE, {
                         "rms_item_numbers": batch,
-                        "zone_ids": all_zone_ids,
                     }))
+
+                if not hierarchy_rows_raw:
+                    logger.info("Step 3b: no hierarchy rows resolved.")
+                    _progress(3, "running", "3b — no hierarchy entities found.")
+                    return []
+
+                # Build lookup maps: entity_id → set of rms_item_numbers
+                item_master_map = {}   # rms_item_master_id → {rms_item_number, ...}
+                bracket_map = {}       # rms_bracket_id → {rms_item_number, ...}
+                subdept_map = {}       # rms_subdepartment_id → {rms_item_number, ...}
+                dept_map = {}          # rms_department_id → {rms_item_number, ...}
+
+                for row in hierarchy_rows_raw:
+                    item_num = row["rms_item_number"]
+                    item_master_map.setdefault(row["rms_item_master_id"], set()).add(item_num)
+                    if row["rms_bracket_id"]:
+                        bracket_map.setdefault(row["rms_bracket_id"], set()).add(item_num)
+                    if row["rms_subdepartment_id"]:
+                        subdept_map.setdefault(row["rms_subdepartment_id"], set()).add(item_num)
+                    if row["rms_department_id"]:
+                        dept_map.setdefault(row["rms_department_id"], set()).add(item_num)
+
+                # Phase 2: Query each hierarchy level independently
+                # Each level returns (entity_id, zone_id, key_names[])
+                REQUIRED_KEYS = {"WeeklyRateNew", "WeeklyRateUsed", "WeeklyTerm"}
+                CASH_KEYS = {"CashPriceMultiplier", "ForcedCashPrice"}
+
+                def _is_complete(key_names):
+                    keys = set(key_names) if key_names else set()
+                    return REQUIRED_KEYS.issubset(keys) and bool(CASH_KEYS & keys)
+
+                # Accumulate results as (rms_item_number, zone_id, is_complete)
+                results = []
+
+                levels = [
+                    ("L1-Item", PRICING_VALIDATION_HIERARCHY_L1_ITEM, item_master_map),
+                    ("L2-Bracket", PRICING_VALIDATION_HIERARCHY_L2_BRACKET, bracket_map),
+                    ("L3-Subdept", PRICING_VALIDATION_HIERARCHY_L3_SUBDEPT, subdept_map),
+                    ("L4-Dept", PRICING_VALIDATION_HIERARCHY_L4_DEPT, dept_map),
+                ]
+
+                for level_name, sql, entity_map in levels:
+                    entity_ids = list(entity_map.keys())
+                    if not entity_ids:
+                        continue
+                    _progress(3, "running", f"3b — {level_name} ({len(entity_ids)} entities, batches of {BATCH_SIZE_3B_LEVEL})…")
+                    for batch in _batched(entity_ids, BATCH_SIZE_3B_LEVEL):
+                        rows = _fetch_with_retry(
+                            conn_3b, sql,
+                            {"entity_ids": batch, "zone_ids": all_zone_ids},
+                            array_key="entity_ids",
+                            batch_label=f"3b-{level_name}",
+                        )
+                        for r in rows:
+                            complete = _is_complete(r["key_names"])
+                            # Map entity_id back to all item_numbers it covers
+                            for item_num in entity_map.get(r["entity_id"], []):
+                                results.append({
+                                    "rms_item_number": item_num,
+                                    "zone_id": r["zone_id"],
+                                    "is_complete": complete,
+                                })
+
                 elapsed = time.monotonic() - t0
                 logger.info("Step 3b done: %d rows in %.1fs", len(results), elapsed)
                 _progress(3, "running", f"3b done — {len(results)} row(s) in {elapsed:.1f}s.")
@@ -250,8 +350,10 @@ def find_pricing_gaps(
         with ThreadPoolExecutor(max_workers=2) as executor:
             future_3a = executor.submit(_run_3a)
             future_3b = executor.submit(_run_3b)
-            price_rows = future_3a.result(timeout=STATEMENT_TIMEOUT_S + 30)
-            hierarchy_rows = future_3b.result(timeout=STATEMENT_TIMEOUT_S + 30)
+            # Generous overall timeout: sum of all possible batch timeouts
+            overall_timeout = STATEMENT_TIMEOUT_S * 10
+            price_rows = future_3a.result(timeout=overall_timeout)
+            hierarchy_rows = future_3b.result(timeout=overall_timeout)
     finally:
         prc_conn.close()
 

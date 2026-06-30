@@ -391,88 +391,102 @@ GROUP BY prim.rms_item_number, ip.price_hierarchy_value
 # Parameters:
 #   rms_item_numbers  list[int]  rms_item_number values from Step 1
 #   zone_ids          list[int]  zone_id values from Step 2
-PRICING_VALIDATION_HIERARCHY_PRICES = """
-WITH item_hierarchy AS (
-    SELECT
-        prim.rms_item_master_id,
-        prim.rms_item_number,
-        prim.rms_bracket_id,
-        rb.rms_subdepartment_id,
-        rs.rms_department_id
-    FROM prcadm.rms_item_master prim
-    LEFT JOIN prcadm.rms_bracket rb
-        ON prim.rms_bracket_id = rb.rms_bracket_id
-    LEFT JOIN prcadm.rms_subdepartment rs
-        ON rb.rms_subdepartment_id = rs.rms_subdepartment_id
-    WHERE prim.rms_item_number = ANY(%(rms_item_numbers)s)
-),
-matched_hierarchy AS (
-    -- Level 1: ITEM
-    SELECT ih.rms_item_number, iph.item_price_hierarchy_id, iph.zone_id
-    FROM item_hierarchy ih
-    JOIN prcadm.item_price_hierarchy iph
-        ON iph.rms_item_master_id = ih.rms_item_master_id
-    WHERE iph.zone_id = ANY(%(zone_ids)s)
-      AND iph.end_date > CURRENT_DATE
+# ── Step 3b — Two-phase hierarchy pricing check ───────────────────────────────
+# Phase 1: Resolve each item's hierarchy chain (fast, index-only)
+# Phase 2: Per-level queries to item_price_hierarchy + pricing_param_value
+#           (4 small focused queries instead of one massive UNION ALL CTE)
+#
+# This avoids CTE materialization/explosion issues on large item sets and lets
+# PostgreSQL use efficient index scans on each lightweight query independently.
 
-    UNION ALL
-
-    -- Level 2: BRACKET
-    SELECT ih.rms_item_number, iph.item_price_hierarchy_id, iph.zone_id
-    FROM item_hierarchy ih
-    JOIN prcadm.item_price_hierarchy iph
-        ON iph.rms_bracket_id = ih.rms_bracket_id
-    WHERE ih.rms_bracket_id IS NOT NULL
-      AND iph.zone_id = ANY(%(zone_ids)s)
-      AND iph.end_date > CURRENT_DATE
-
-    UNION ALL
-
-    -- Level 3: SUBDEPT
-    SELECT ih.rms_item_number, iph.item_price_hierarchy_id, iph.zone_id
-    FROM item_hierarchy ih
-    JOIN prcadm.item_price_hierarchy iph
-        ON iph.rms_subdepartment_id = ih.rms_subdepartment_id
-    WHERE ih.rms_subdepartment_id IS NOT NULL
-      AND iph.zone_id = ANY(%(zone_ids)s)
-      AND iph.end_date > CURRENT_DATE
-
-    UNION ALL
-
-    -- Level 4: DEPT
-    SELECT ih.rms_item_number, iph.item_price_hierarchy_id, iph.zone_id
-    FROM item_hierarchy ih
-    JOIN prcadm.item_price_hierarchy iph
-        ON iph.rms_department_id = ih.rms_department_id
-    WHERE ih.rms_department_id IS NOT NULL
-      AND iph.zone_id = ANY(%(zone_ids)s)
-      AND iph.end_date > CURRENT_DATE
-),
-param_keys AS (
-    SELECT
-        mh.rms_item_number,
-        mh.zone_id,
-        array_agg(DISTINCT ppk.pricing_param_key_name) AS key_names
-    FROM matched_hierarchy mh
-    JOIN prcadm.pricing_param_value ppv
-        ON ppv.item_price_hierarchy_id = mh.item_price_hierarchy_id
-       AND ppv.end_time >= CURRENT_TIMESTAMP
-    JOIN prcadm.pricing_param_key ppk
-        ON ppv.pricing_param_key_id = ppk.pricing_param_key_id
-    GROUP BY mh.rms_item_number, mh.zone_id
-)
+PRICING_VALIDATION_HIERARCHY_RESOLVE = """
 SELECT
-    rms_item_number,
-    zone_id,
-    (
-        'WeeklyRateNew'  = ANY(key_names)
-        AND 'WeeklyRateUsed' = ANY(key_names)
-        AND 'WeeklyTerm'     = ANY(key_names)
-        AND (
-            'CashPriceMultiplier' = ANY(key_names)
-            OR 'ForcedCashPrice'  = ANY(key_names)
-        )
-    ) AS is_complete
-FROM param_keys
+    prim.rms_item_master_id,
+    prim.rms_item_number,
+    prim.rms_bracket_id,
+    rb.rms_subdepartment_id,
+    rs.rms_department_id
+FROM prcadm.rms_item_master prim
+LEFT JOIN prcadm.rms_bracket rb
+    ON prim.rms_bracket_id = rb.rms_bracket_id
+LEFT JOIN prcadm.rms_subdepartment rs
+    ON rb.rms_subdepartment_id = rs.rms_subdepartment_id
+WHERE prim.rms_item_number = ANY(%(rms_item_numbers)s)
+"""
+
+# Each level query: given a set of entity IDs + zone_ids, find hierarchy pricing.
+# Returns (rms_item_number, zone_id, is_complete) per matched row.
+# The caller maps entity IDs → rms_item_number in Python.
+
+# Level 1: ITEM — join on rms_item_master_id
+PRICING_VALIDATION_HIERARCHY_L1_ITEM = """
+SELECT
+    iph.rms_item_master_id AS entity_id,
+    iph.zone_id,
+    array_agg(DISTINCT ppk.pricing_param_key_name) AS key_names
+FROM prcadm.item_price_hierarchy iph
+JOIN prcadm.pricing_param_value ppv
+    ON ppv.item_price_hierarchy_id = iph.item_price_hierarchy_id
+   AND ppv.end_time >= CURRENT_TIMESTAMP
+JOIN prcadm.pricing_param_key ppk
+    ON ppv.pricing_param_key_id = ppk.pricing_param_key_id
+WHERE iph.rms_item_master_id = ANY(%(entity_ids)s)
+  AND iph.zone_id = ANY(%(zone_ids)s)
+  AND iph.end_date > CURRENT_DATE
+GROUP BY iph.rms_item_master_id, iph.zone_id
+"""
+
+# Level 2: BRACKET — join on rms_bracket_id
+PRICING_VALIDATION_HIERARCHY_L2_BRACKET = """
+SELECT
+    iph.rms_bracket_id AS entity_id,
+    iph.zone_id,
+    array_agg(DISTINCT ppk.pricing_param_key_name) AS key_names
+FROM prcadm.item_price_hierarchy iph
+JOIN prcadm.pricing_param_value ppv
+    ON ppv.item_price_hierarchy_id = iph.item_price_hierarchy_id
+   AND ppv.end_time >= CURRENT_TIMESTAMP
+JOIN prcadm.pricing_param_key ppk
+    ON ppv.pricing_param_key_id = ppk.pricing_param_key_id
+WHERE iph.rms_bracket_id = ANY(%(entity_ids)s)
+  AND iph.zone_id = ANY(%(zone_ids)s)
+  AND iph.end_date > CURRENT_DATE
+GROUP BY iph.rms_bracket_id, iph.zone_id
+"""
+
+# Level 3: SUBDEPT — join on rms_subdepartment_id
+PRICING_VALIDATION_HIERARCHY_L3_SUBDEPT = """
+SELECT
+    iph.rms_subdepartment_id AS entity_id,
+    iph.zone_id,
+    array_agg(DISTINCT ppk.pricing_param_key_name) AS key_names
+FROM prcadm.item_price_hierarchy iph
+JOIN prcadm.pricing_param_value ppv
+    ON ppv.item_price_hierarchy_id = iph.item_price_hierarchy_id
+   AND ppv.end_time >= CURRENT_TIMESTAMP
+JOIN prcadm.pricing_param_key ppk
+    ON ppv.pricing_param_key_id = ppk.pricing_param_key_id
+WHERE iph.rms_subdepartment_id = ANY(%(entity_ids)s)
+  AND iph.zone_id = ANY(%(zone_ids)s)
+  AND iph.end_date > CURRENT_DATE
+GROUP BY iph.rms_subdepartment_id, iph.zone_id
+"""
+
+# Level 4: DEPT — join on rms_department_id
+PRICING_VALIDATION_HIERARCHY_L4_DEPT = """
+SELECT
+    iph.rms_department_id AS entity_id,
+    iph.zone_id,
+    array_agg(DISTINCT ppk.pricing_param_key_name) AS key_names
+FROM prcadm.item_price_hierarchy iph
+JOIN prcadm.pricing_param_value ppv
+    ON ppv.item_price_hierarchy_id = iph.item_price_hierarchy_id
+   AND ppv.end_time >= CURRENT_TIMESTAMP
+JOIN prcadm.pricing_param_key ppk
+    ON ppv.pricing_param_key_id = ppk.pricing_param_key_id
+WHERE iph.rms_department_id = ANY(%(entity_ids)s)
+  AND iph.zone_id = ANY(%(zone_ids)s)
+  AND iph.end_date > CURRENT_DATE
+GROUP BY iph.rms_department_id, iph.zone_id
 """
  
