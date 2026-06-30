@@ -733,3 +733,43 @@ SCOPE_QUERY_MAP = {
     "COUNTRY":  (QUERY_DIRECT_COUNTRY,  "country_code"),
     "LOB":      (QUERY_DIRECT_LOB,      "lob_code"),
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scope-list queries — return all active associations for a given hierarchy
+# type (for populating dropdowns and generating downloadable lists).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Single-type list: pass %(scope_type)s  e.g. 'STORE'
+QUERY_LIST_BY_TYPE = """
+SELECT
+    a.association_id,
+    a.association_ref_code   AS code,
+    a.association_name       AS name,
+    a.association_desc       AS description,
+    at.association_type_name AS hierarchy_type
+FROM configadm.association a
+JOIN configadm.association_type at
+    ON at.association_type_id = a.association_type_id
+WHERE at.association_type_name = %(scope_type)s
+ORDER BY a.association_ref_code;
+"""
+
+# All types in one query — results grouped by display_seq then code.
+QUERY_LIST_ALL = """
+SELECT
+    at.association_type_name AS hierarchy_type,
+    at.display_value         AS hierarchy_display_name,
+    at.display_seq,
+    a.association_id,
+    a.association_ref_code   AS code,
+    a.association_name       AS name,
+    a.association_desc       AS description
+FROM configadm.association a
+JOIN configadm.association_type at
+    ON at.association_type_id = a.association_type_id
+WHERE at.association_type_name IN ('STORE', 'DISTRICT', 'REGION', 'STATE', 'COMPANY', 'COUNTRY', 'LOB')
+ORDER BY at.display_seq, a.association_ref_code;
+"""
+
+# Allowed scope types for the scope-list endpoint
+SCOPE_LIST_ALLOWED = {"STORE", "DISTRICT", "REGION", "STATE", "COMPANY", "COUNTRY", "LOB"}
