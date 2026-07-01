@@ -37,6 +37,7 @@ from queries import (
     PRICING_VALIDATION_HIERARCHY_L2_BRACKET,
     PRICING_VALIDATION_HIERARCHY_L3_SUBDEPT,
     PRICING_VALIDATION_HIERARCHY_L4_DEPT,
+    PRICING_VALIDATION_PRODUCT_PRICES,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ STATEMENT_TIMEOUT_S = 90
 BATCH_SIZE_3A = 100
 BATCH_SIZE_3B_RESOLVE = 200
 BATCH_SIZE_3B_LEVEL = 100
+BATCH_SIZE_3C = 100
 
 def _connect(config: dict, label: str):
     """Open a read-only psycopg2 connection from a config dict."""
@@ -347,25 +349,57 @@ def find_pricing_gaps(
             finally:
                 conn_3b.close()
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        # ── 3c: product_price (authoritative table queried by RACPad at receive time) ─
+        def _run_3c():
+            t0 = time.monotonic()
+            conn_3c = _connect(db_configs["prcdb"], "prcdb")
+            try:
+                _progress(3, "running", f"3c — querying product_price ({len(unique_item_numbers)} items, batches of {BATCH_SIZE_3C})…")
+                results = []
+                batches = list(_batched(unique_item_numbers, BATCH_SIZE_3C))
+                for idx, batch in enumerate(batches, 1):
+                    _progress(3, "running", f"3c — batch {idx}/{len(batches)} ({len(batch)} items)…")
+                    results.extend(_fetch_with_retry(
+                        conn_3c, PRICING_VALIDATION_PRODUCT_PRICES,
+                        {"rms_item_numbers": batch, "zone_ids": all_zone_ids},
+                        array_key="rms_item_numbers",
+                        batch_label=f"3c-batch{idx}",
+                    ))
+                elapsed = time.monotonic() - t0
+                logger.info("Step 3c done: %d rows in %.1fs", len(results), elapsed)
+                _progress(3, "running", f"3c done — {len(results)} row(s) in {elapsed:.1f}s.")
+                return results
+            finally:
+                conn_3c.close()
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
             future_3a = executor.submit(_run_3a)
             future_3b = executor.submit(_run_3b)
+            future_3c = executor.submit(_run_3c)
             # Generous overall timeout: sum of all possible batch timeouts
             overall_timeout = STATEMENT_TIMEOUT_S * 10
             price_rows = future_3a.result(timeout=overall_timeout)
             hierarchy_rows = future_3b.result(timeout=overall_timeout)
+            product_price_rows = future_3c.result(timeout=overall_timeout)
     finally:
         prc_conn.close()
 
-    _progress(3, "done", f"item_price: {len(price_rows)} row(s), hierarchy: {len(hierarchy_rows)} row(s).")
+    _progress(3, "done", f"item_price: {len(price_rows)} row(s), hierarchy: {len(hierarchy_rows)} row(s), product_price: {len(product_price_rows)} row(s).")
     _progress(4, "running", "Analyzing gaps…")
 
     ip_exists = {(r["rms_item_number"], r["zone_id"]) for r in price_rows}
     ih_exists = {(r["rms_item_number"], r["zone_id"]) for r in hierarchy_rows}
+    # product_price: the table RACPad queries at receive time — authoritative presence check
+    pp_exists = {(r["rms_item_number"], r["zone_id"]) for r in product_price_rows}
+    # MANUAL pricing is not published to product_price; items priced exclusively as
+    # MANUAL must bypass the pp_exists check or they would always appear as MISSING.
+    ip_manual_exists = {
+        (r["rms_item_number"], r["zone_id"]) for r in price_rows if r.get("has_manual")
+    }
 
-    # (rms_item_number, zone_id) present in EITHER system
+    # (rms_item_number, zone_id) present in EITHER item_price system
     priced_exists: set[tuple] = ip_exists | ih_exists
-    # (rms_item_number, zone_id) complete in EITHER system
+    # (rms_item_number, zone_id) complete in EITHER item_price system
     priced_complete: set[tuple] = {
         (r["rms_item_number"], r["zone_id"]) for r in price_rows if r["is_complete"]
     } | {
@@ -373,8 +407,13 @@ def find_pricing_gaps(
     }
 
     # --- Gap detection ---
-    # MISSING    — no item_price row at all for (rms_item_number, zone_id)
-    # INCOMPLETE — row exists but required fields are NULL
+    # Priority order (highest to lowest):
+    #   1. MISSING from product_price — RACPad will throw "Pricing details not found"
+    #      even if item_price / item_price_hierarchy has data.
+    #      Exception: items with pricing_type = MANUAL in item_price are exempt because
+    #      MANUAL pricing is never published to product_price by design.
+    #   2. MISSING from item_price — no item_price or hierarchy record at all.
+    #   3. INCOMPLETE — item_price row exists but required fields are NULL.
     gaps = []
     for item in po_items:
         store = item["store_number"]
@@ -388,7 +427,15 @@ def find_pricing_gaps(
 
         for zone in zones:
             key = (item["rms_item_number"], zone["zone_id"])
-            if key not in priced_exists:
+            # Items with MANUAL pricing in item_price are exempt from the product_price
+            # check because MANUAL type is never written to product_price.
+            requires_pp = key not in ip_manual_exists
+            if requires_pp and key not in pp_exists:
+                gaps.append(_build_gap(item, zone_id=zone["zone_id"],
+                                       zone_number=zone["zone_number"],
+                                       zone_name=zone["zone_name"],
+                                       reason="MISSING — no product_price record"))
+            elif key not in priced_exists:
                 gaps.append(_build_gap(item, zone_id=zone["zone_id"],
                                        zone_number=zone["zone_number"],
                                        zone_name=zone["zone_name"],

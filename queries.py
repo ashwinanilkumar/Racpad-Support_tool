@@ -355,7 +355,11 @@ SELECT
                 AND (ip.cash_price_multiplier IS NOT NULL
                      OR ip.forced_cash_price  IS NOT NULL)
         END
-    ) AS is_complete
+    ) AS is_complete,
+    -- True when at least one active row for this (item, zone) has pricing_type = MANUAL.
+    -- MANUAL pricing is not published to product_price, so these items must bypass
+    -- the product_price existence check during gap detection.
+    BOOL_OR(ip.pricing_type = 'MANUAL') AS has_manual
 FROM prcadm.item_price ip
 JOIN prcadm.rms_item_master prim
     ON ip.rms_item_master_id = prim.rms_item_master_id
@@ -489,4 +493,22 @@ WHERE iph.rms_department_id = ANY(%(entity_ids)s)
   AND iph.end_date > CURRENT_DATE
 GROUP BY iph.rms_department_id, iph.zone_id
 """
- 
+
+# Step 3c ── prcdb ─────────────────────────────────────────────────────────────
+# Check prcadm.product_price — the table queried by RACPad at receive time to
+# validate that an item has a published price for the store's zone.
+# This is the AUTHORITATIVE table: if a row is absent here, RACPad will throw
+# "Pricing details not found" regardless of item_price / item_price_hierarchy.
+#
+# Parameters:
+#   rms_item_numbers  list[int]  rms_item_number values from Step 1
+#   zone_ids          list[int]  zone_id values (integers) from Step 2
+PRICING_VALIDATION_PRODUCT_PRICES = """
+SELECT
+    pp.rms_item_number,
+    pp.zone_id
+FROM prcadm.product_price pp
+WHERE pp.rms_item_number = ANY(%(rms_item_numbers)s)
+  AND pp.zone_id         = ANY(%(zone_ids)s)
+  AND (pp.end_time IS NULL OR pp.end_time > CURRENT_TIMESTAMP)
+"""
