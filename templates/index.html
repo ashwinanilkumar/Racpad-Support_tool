@@ -246,7 +246,7 @@ tr:hover td{background:var(--accent-light)}
       </div>
       <div class="form-row">
         <div class="form-group"><label>PO Number <span style="font-size:11px;color:var(--text-sec)">(optional filter)</span></label><input id="gapPo" placeholder="e.g. 16391903"/></div>
-        <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="PricingGaps.check()">&#128200; Check Pricing Gaps</button></div>
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:10px"><button id="gapCheckBtn" class="btn btn-primary" onclick="PricingGaps.check()">&#128200; Check Pricing Gaps</button><button id="gapCancelBtn" class="btn btn-danger" onclick="PricingGaps.cancel()" style="display:none">&#10005; Cancel</button></div>
       </div>
     </div>
     <div id="gapResult"></div>
@@ -322,6 +322,7 @@ html+='</div>';$('diagResult').innerHTML=html;PO622._lastResult=d;$('diagDownloa
 },sendEmail:async function(){var b={po_number:$('diagPo').value,store_number:$('diagStore').value,recipient_email:$('emailTo').value,recipient_name:$('emailName').value,model_lines:$('emailModels').value,email_body:$('emailBody').value,cc:$('emailCc').value,incident_number:$('emailIncidentNo').value,incident_description:$('emailIncidentDesc').value};var r=await api('POST','/api/po622/send-email',b);$('emailAlert').innerHTML='<div class="alert alert-'+(r.ok?'success':'error')+'">'+(r.data.message||r.data.error)+'</div>';if(r.ok)toast(r.data.message,'success')},download:function(fmt){var d=PO622._lastResult;if(!d){toast('Run diagnostic first','error');return}var ts=new Date().toISOString().slice(0,16).replace(/[-T:]/g,'');var base='PO622_report_'+d.po_number+'_Store'+d.store_number+'_'+ts;var blob,ext;if(fmt==='json'){var _exp=Object.assign({},d);delete _exp.root_cause;blob=new Blob([JSON.stringify(_exp,null,2)],{type:'application/json'});ext='json'}else if(fmt==='csv'){var L=[];L.push('# PO622 Diagnostic Report');L.push('# PO,'+d.po_number);L.push('# Store,'+d.store_number);L.push('# Generated,'+new Date().toISOString());L.push('');L.push('## Line Items');L.push('Line,RMS Item,Model,Description,Ordered,Received,Partial,Reversed,Remaining');(d.line_items||[]).forEach(function(li){var c=[li.purchase_order_line_number,li.rms_item_number,li.model_number||'',li.item_description||'',li.quantity_ordered,li.fully_received_count,li.partial_received_count,li.reversed_count,li.remaining_to_receive];L.push(c.map(function(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"';}).join(','))});if(d.duplicate_serials&&d.duplicate_serials.length){L.push('');L.push('## Duplicate Serials');L.push('Serial,RMS Item,Model,Times Used');d.duplicate_serials.forEach(function(ds){L.push([ds.manufacturer_serial_number||ds.serial_number||'',ds.rms_item_number,ds.model_number||'',ds.times_used].map(function(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"';}).join(','))})}if(d.timeline&&d.timeline.length){L.push('');L.push('## Timeline');L.push('Time,Event Type,Item,Details,Performed By');d.timeline.forEach(function(ev){var c=[(ev.event_time||'').substring(0,16).replace('T',' '),ev.event_type||'',ev.rms_item_number||'',ev.details||'',ev.performed_by||''];L.push(c.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(','))})}blob=new Blob([L.join('\n')],{type:'text/csv'});ext='csv'}else{var ov=d.overview&&d.overview[0]?d.overview[0]:{};var liRows=(d.line_items||[]).map(function(li){return'<tr><td>'+li.purchase_order_line_number+'</td><td>'+li.rms_item_number+'</td><td>'+(li.model_number||'&mdash;')+'</td><td>'+(li.item_description||'&mdash;')+'</td><td>'+li.quantity_ordered+'</td><td>'+li.fully_received_count+'</td><td>'+li.partial_received_count+'</td><td>'+li.reversed_count+'</td><td>'+li.remaining_to_receive+'</td></tr>';}).join('');var dsHTML='';if(d.duplicate_serials&&d.duplicate_serials.length){dsHTML='<div class="section"><h2>Duplicate Serials</h2><table><thead><tr><th>Serial</th><th>RMS Item</th><th>Model</th><th>Times Used</th></tr></thead><tbody>'+d.duplicate_serials.map(function(ds){return'<tr><td>'+(ds.manufacturer_serial_number||ds.serial_number||'')+'</td><td>'+ds.rms_item_number+'</td><td>'+(ds.model_number||'&mdash;')+'</td><td>'+ds.times_used+'</td></tr>';}).join('')+'</tbody></table></div>';}var tlHTML='';if(d.timeline&&d.timeline.length){tlHTML='<div class="section"><h2>Event Timeline</h2><table><thead><tr><th>Time</th><th>Event Type</th><th>Item</th><th>Details</th><th>Performed By</th></tr></thead><tbody>'+d.timeline.map(function(ev){return'<tr><td style="white-space:nowrap">'+(ev.event_time?ev.event_time.substring(0,16).replace('T',' '):'&mdash;')+'</td><td>'+ev.event_type+'</td><td>'+(ev.rms_item_number||'&mdash;')+'</td><td>'+(ev.details||'&mdash;')+'</td><td>'+(ev.performed_by||'&mdash;')+'</td></tr>';}).join('')+'</tbody></table></div>';}var ovHTML='';if(ov.po_status){ovHTML='<div class="section"><h2>PO Overview</h2><table style="width:auto"><tbody><tr><th style="white-space:nowrap;padding:7px 12px">Status</th><td style="padding:7px 12px">'+ov.po_status+(ov.po_status_description?' &mdash; '+ov.po_status_description:'')+'</td></tr><tr><th style="padding:7px 12px">Type</th><td style="padding:7px 12px">'+ov.po_type+(ov.po_type_description?' &mdash; '+ov.po_type_description:'')+'</td></tr><tr><th style="padding:7px 12px">Order Date</th><td style="padding:7px 12px">'+(ov.order_date||'&mdash;')+'</td></tr><tr><th style="padding:7px 12px">Est. Delivery</th><td style="padding:7px 12px">'+(ov.estimated_delivery_date||'&mdash;')+'</td></tr><tr><th style="padding:7px 12px">Close Date</th><td style="padding:7px 12px">'+(ov.close_date||'&mdash;')+'</td></tr><tr><th style="padding:7px 12px">Created By</th><td style="padding:7px 12px">'+(ov.created_by||'&mdash;')+'</td></tr></tbody></table></div>';}var rpt='<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>PO622 Report \u2014 PO '+d.po_number+' Store '+d.store_number+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:#1e293b;background:#f4f6f9;padding:32px}@media print{body{padding:16px;background:#fff}}.header{background:#1a1a2e;color:#fff;padding:20px 28px;border-radius:12px;margin-bottom:20px}.header h1{font-size:20px;margin-bottom:6px}.header .meta{font-size:12px;opacity:.75}.section{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:14px}.section h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f1f5f9}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:7px 10px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;white-space:nowrap;background:#f8fafc;border-bottom:2px solid #e2e8f0}td{padding:7px 10px;border-bottom:1px solid #f1f5f9}tr:last-child td{border-bottom:none}.footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0}</style></head><body><div class="header"><h1>PO622 Diagnostic Report</h1><p class="meta">PO '+d.po_number+' &nbsp;&bull;&nbsp; Store '+d.store_number+' &nbsp;&bull;&nbsp; Generated '+new Date().toLocaleString()+'</p></div>'+ovHTML+'<div class="section"><h2>Line Items</h2><table><thead><tr><th>Line</th><th>RMS Item</th><th>Model</th><th>Description</th><th>Ordered</th><th>Received</th><th>Partial</th><th>Reversed</th><th>Remaining</th></tr></thead><tbody>'+liRows+'</tbody></table></div>'+dsHTML+tlHTML+'<div class="footer">Generated by Racpad Support Tool &middot; '+new Date().toISOString()+'</div></body></html>';blob=new Blob([rpt],{type:'text/html'});ext='html'}var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=base+'.'+ext;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);toast('Downloading '+ext.toUpperCase()+' report\u2026','success')}};
 var PricingGaps={
   _steps:['Fetching PO items from RAC DB','Resolving store pricing zones','Checking item pricing (dual system)','Analyzing gaps'],
+  _abortCtrl:null,
   _renderProgress:function(steps){
     var html='<div class="card" style="margin-top:16px"><div class="card-title">Pricing Gap Check Progress</div><div style="display:flex;flex-direction:column;gap:12px;padding:4px 0">';
     steps.forEach(function(s,i){
@@ -343,16 +344,27 @@ var PricingGaps={
     html+='</div>';
     return html;
   },
+  _setRunning:function(running){
+    $('gapCheckBtn').disabled=running;
+    $('gapCancelBtn').style.display=running?'inline-flex':'none';
+  },
+  cancel:function(){
+    if(PricingGaps._abortCtrl){PricingGaps._abortCtrl.abort();PricingGaps._abortCtrl=null;}
+    PricingGaps._setRunning(false);
+    $('gapResult').innerHTML='<div class="alert alert-info">&#10005; Pricing gap check was cancelled.</div>';
+  },
   check:function(){
     var dt=$('gapDate').value,store=$('gapStore').value.trim(),po=$('gapPo').value.trim();
     var body={};if(dt)body.check_date=dt;if(store)body.store=store;if(po)body.po_number=po;
     var steps=[{status:'pending',detail:''},{status:'pending',detail:''},{status:'pending',detail:''},{status:'pending',detail:''}];
     $('gapResult').innerHTML=PricingGaps._renderProgress(steps);
-    fetch('/api/pricing-gaps/check-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(response){
+    PricingGaps._abortCtrl=new AbortController();
+    PricingGaps._setRunning(true);
+    fetch('/api/pricing-gaps/check-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:PricingGaps._abortCtrl.signal}).then(function(response){
       var reader=response.body.getReader();var decoder=new TextDecoder();var buffer='';
       function read(){
         reader.read().then(function(result){
-          if(result.done)return;
+          if(result.done){PricingGaps._setRunning(false);PricingGaps._abortCtrl=null;return;}
           buffer+=decoder.decode(result.value,{stream:true});
           var lines=buffer.split('\n');
           buffer=lines.pop();
@@ -362,11 +374,15 @@ var PricingGaps={
             }
           });
           read();
+        }).catch(function(e){
+          if(e.name!=='AbortError'){$('gapResult').innerHTML=PricingGaps._renderProgress(steps)+'<div class="alert alert-error">Stream error: '+e.message+'</div>';}
+          PricingGaps._setRunning(false);PricingGaps._abortCtrl=null;
         });
       }
       read();
     }).catch(function(e){
-      $('gapResult').innerHTML='<div class="alert alert-error">Connection failed: '+e.message+'</div>';
+      if(e.name!=='AbortError'){$('gapResult').innerHTML='<div class="alert alert-error">Connection failed: '+e.message+'</div>';}
+      PricingGaps._setRunning(false);PricingGaps._abortCtrl=null;
     });
   },
   _handleMsg:function(msg,steps){
@@ -376,8 +392,10 @@ var PricingGaps={
       steps[idx].detail=msg.detail||'';
       $('gapResult').innerHTML=PricingGaps._renderProgress(steps);
     }else if(msg.type==='result'){
+      PricingGaps._setRunning(false);PricingGaps._abortCtrl=null;
       $('gapResult').innerHTML=PricingGaps._renderProgress(steps)+PricingGaps._renderResult(msg);
     }else if(msg.type==='error'){
+      PricingGaps._setRunning(false);PricingGaps._abortCtrl=null;
       $('gapResult').innerHTML=PricingGaps._renderProgress(steps)+'<div class="alert alert-error">'+msg.message+'</div>';
     }
   }
